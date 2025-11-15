@@ -1,0 +1,29 @@
+# Core
+torch==2.1.0
+transformers==4.35.0
+
+# API
+fastapi==0.104.0
+uvicorn==0.24.0
+pydantic==2.4.0
+
+# GPU/CUDA
+pynvml==11.535.108
+GPUtil==1.4.0
+
+# Data structures
+sortedcontainers==2.4.0
+
+# Testing
+pytest==7.4.0
+pytest-asyncio==0.21.0
+pytest-cov==4.1.0
+
+# Monitoring
+prometheus-client==0.18.0
+
+# Async
+aioredis==2.0.1
+
+# Utility
+python-dotenv==1.0.0
