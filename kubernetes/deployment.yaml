@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-vram-orchestrator
+  namespace: default
+  labels:
+    app: gpu-vram-orchestrator
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gpu-vram-orchestrator
+  template:
+    metadata:
+      labels:
+        app: gpu-vram-orchestrator
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Request GPU resources
+      containers:
+      - name: gpu-vram-orchestrator
+        image: gpu-vram-orchestrator:latest
+        imagePullPolicy: Always
+        
+        # Port configuration
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 8000
+          protocol: TCP
+        
+        # Resource requests and limits
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "2"
+            nvidia.com/gpu: "1"  # Request 1 GPU
+          limits:
+            memory: "4Gi"
+            cpu: "4"
+            nvidia.com/gpu: "1"
+        
+        # Environment variables
+        env:
+        - name: GPU_MAX_MEMORY_FRACTION
+          value: "0.9"
+        - name: PROMETHEUS_ENABLED
+          value: "true"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: CACHE_SIZE_MB
+          valueFrom:
+            configMapKeyRef:
+              name: gpu-orchestrator-config
+              key: cache_size_mb
+        - name: SCHEDULER_WORKERS
+          valueFrom:
+            configMapKeyRef:
+              name: gpu-orchestrator-config
+              key: scheduler_workers
+        
+        # Probes for health checking
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /status
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        # Volume mounts
+        volumeMounts:
+        - name: config
+          mountPath: /etc/gpu-orchestrator
+          readOnly: true
+        - name: cache
+          mountPath: /var/cache/models
+      
+      # Node selector for GPU nodes
+      nodeSelector:
+        accelerator: nvidia-gpu
+      
+      # GPU toleration
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      
+      # Volumes
+      volumes:
+      - name: config
+        configMap:
+          name: gpu-orchestrator-config
+      - name: cache
+        emptyDir:
+          sizeLimit: 50Gi
+      
+      # Restart policy
+      restartPolicy: Always
+      
+      # Service account
+      serviceAccountName: gpu-orchestrator
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gpu-orchestrator
+  namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gpu-orchestrator
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/logs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gpu-orchestrator
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gpu-orchestrator
+subjects:
+- kind: ServiceAccount
+  name: gpu-orchestrator
+  namespace: default

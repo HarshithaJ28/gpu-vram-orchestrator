@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-orchestrator-config
+  namespace: default
+data:
+  # Cache configuration
+  cache_size_mb: "24000"  # 24 GB GPU cache
+  
+  # Scheduler configuration
+  scheduler_workers: "4"
+  scheduler_memory_weight: "0.5"
+  scheduler_load_weight: "0.3"
+  scheduler_affinity_weight: "0.2"
+  
+  # Prediction configuration
+  prediction_enabled: "true"
+  prediction_window_hours: "24"
+  prediction_min_confidence: "0.6"
+  
+  # Monitoring configuration
+  metrics_enabled: "true"
+  metrics_export_interval_seconds: "60"
+  
+  # Application configuration
+  app_max_connections: "1000"
+  app_request_timeout_seconds: "300"
+  app_model_load_timeout_seconds: "600"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-orchestrator-logging
+  namespace: default
+data:
+  logging.conf: |
+    [loggers]
+    keys=root,orchestrator,scheduler,cache,predictor,monitoring
+    
+    [handlers]
+    keys=console,file
+    
+    [formatters]
+    keys=detailed
+    
+    [logger_root]
+    level=INFO
+    handlers=console,file
+    
+    [logger_orchestrator]
+    level=DEBUG
+    handlers=console,file
+    qualname=orchestrator
+    propagate=0
+    
+    [logger_scheduler]
+    level=INFO
+    handlers=console,file
+    qualname=scheduler
+    propagate=0
+    
+    [logger_cache]
+    level=INFO
+    handlers=console,file
+    qualname=cache
+    propagate=0
+    
+    [logger_predictor]
+    level=INFO
+    handlers=console,file
+    qualname=predictor
+    propagate=0
+    
+    [logger_monitoring]
+    level=INFO
+    handlers=console,file
+    qualname=monitoring
+    propagate=0
+    
+    [handler_console]
+    class=StreamHandler
+    level=DEBUG
+    formatter=detailed
+    args=(sys.stdout,)
+    
+    [handler_file]
+    class=handlers.RotatingFileHandler
+    level=DEBUG
+    formatter=detailed
+    args=('/var/log/gpu-orchestrator.log', 'a', 10485760, 5)
+    
+    [formatter_detailed]
+    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+    datefmt=%Y-%m-%d %H:%M:%S
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-orchestrator
+  labels:
+    monitoring: enabled
