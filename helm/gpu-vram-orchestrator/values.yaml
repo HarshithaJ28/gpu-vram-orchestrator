@@ -1,0 +1,213 @@
+# Default values for gpu-vram-orchestrator
+# This is a YAML-formatted file.
+
+# Image configuration
+image:
+  repository: gpu-vram-orchestrator
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+# Replica configuration
+replicas: 2
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+  annotations: {}
+
+# Ingress configuration (optional)
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: gpu-orchestrator.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: gpu-orchestrator-tls
+      hosts:
+        - gpu-orchestrator.example.com
+
+# GPU configuration
+gpu:
+  # Number of GPUs per pod (e.g., 1 for single GPU, 2 for multi-GPU)
+  count: 1
+  # GPU type (e.g., nvidia.com/gpu for generic GPUs, supported by nvidia/gpu-operator)
+  type: "nvidia.com/gpu"
+
+# Resource limits and requests
+resources:
+  limits:
+    memory: "4Gi"
+    cpu: "2"
+  requests:
+    memory: "2Gi"
+    cpu: "1"
+
+# Cache configuration
+cache:
+  # Cache size in MB per pod
+  size_mb: 24000
+  # Reserved memory for system (MB)
+  reserved_memory_mb: 2000
+
+# Scheduler configuration
+scheduler:
+  # Weight for memory availability (0.0 - 1.0)
+  memory_weight: 0.5
+  # Weight for GPU load (0.0 - 1.0)
+  load_weight: 0.3
+  # Weight for affinity (0.0 - 1.0)
+  affinity_weight: 0.2
+  # Number of scheduler workers
+  workers: 4
+
+# Predictor configuration
+predictor:
+  # History window in hours for pattern learning
+  window_hours: 24
+  # Minimum confidence threshold for preloading (0.0 - 1.0)
+  min_confidence: 0.60
+  # Enable ML-based preloading
+  enabled: true
+
+# Prometheus monitoring
+prometheus:
+  enabled: true
+  interval: 30s
+  port: 8001
+
+# Logging
+logging:
+  level: INFO
+  format: json
+
+# Environment variables
+env:
+  LOG_LEVEL: INFO
+  PROMETHEUS_ENABLED: "true"
+  PREDICTION_ENABLED: "true"
+
+# ConfigMap data
+configMap:
+  data: {}
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node affinity (for GPU nodes)
+nodeSelector:
+  accelerator: "true"
+
+# Pod affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - gpu-vram-orchestrator
+          topologyKey: kubernetes.io/hostname
+
+# Tolerations (for GPU node taints)
+tolerations:
+  - key: accelerator
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# Horizontal Pod Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Security context
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - NET_BIND_SERVICE
+
+# Service account
+serviceAccount:
+  create: true
+  name: gpu-vram-orchestrator
+  annotations: {}
+
+# RBAC
+rbac:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "endpoints"]
+      verbs: ["get", "list", "watch"]
+
+# Persistent volume (for model cache if needed)
+persistence:
+  enabled: false
+  storageClass: ""
+  size: 50Gi
+  mountPath: /var/cache/models
+
+# Extra volumes
+extraVolumes: []
+
+# Extra volume mounts
+extraVolumeMounts: []
+
+# Init containers
+initContainers: []
+
+# Sidecar containers
+sidecarContainers: []
+
+# Labels for all resources
+labels:
+  app: gpu-vram-orchestrator
+  version: "1.0.0"
+
+# Annotations for all resources
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8001"

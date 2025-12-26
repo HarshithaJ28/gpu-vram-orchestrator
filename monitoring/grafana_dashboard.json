@@ -1,0 +1,221 @@
+{
+  "dashboard": {
+    "title": "GPU VRAM Orchestrator",
+    "description": "Monitoring and observability for GPU memory management",
+    "tags": ["gpu", "vram", "orchestrator", "production"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "title": "GPU Memory Utilization",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "((gpu_memory_total_mb - gpu_memory_available_mb) / gpu_memory_total_mb) * 100",
+            "legendFormat": "GPU {{ gpu_id }} Utilization"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "Utilization %",
+            "show": true
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [90]},
+              "operator": {"type": "and"}
+            }
+          ]
+        }
+      },
+      {
+        "title": "Cache Hit Rate",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "cache:hit_rate:5m * 100"
+          }
+        ],
+        "thresholds": "40,75",
+        "colors": ["red", "yellow", "green"]
+      },
+      {
+        "title": "Inference Latency (P50/P95/P99)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "latency:p50:5m",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "latency:p95:5m",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "latency:p99:5m",
+            "legendFormat": "P99"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Latency",
+            "show": true
+          }
+        ]
+      },
+      {
+        "title": "Throughput (Predictions/sec)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "gpu:inference_rate:5m",
+            "legendFormat": "GPU {{ gpu_id }}"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Predictions/sec",
+            "show": true
+          }
+        ]
+      },
+      {
+        "title": "Cache Evictions (per minute)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "cache:eviction_rate:5m * 60",
+            "legendFormat": "Evictions/min"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Count",
+            "show": true
+          }
+        ]
+      },
+      {
+        "title": "API Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "api:error_rate:5m * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "%",
+            "show": true
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [1]},
+              "operator": {"type": "and"}
+            }
+          ]
+        }
+      },
+      {
+        "title": "Scheduler Selection Time (P99)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "scheduler:response_time_p99:5m",
+            "legendFormat": "P99"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Time",
+            "show": true
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"type": "gt", "params": [5]},
+              "operator": {"type": "and"}
+            }
+          ]
+        }
+      },
+      {
+        "title": "Models Loaded",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(gpu_model_loaded)",
+            "legendFormat": "Total Models"
+          }
+        ]
+      },
+      {
+        "title": "Pinned Models",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(gpu_model_pinned == 1)",
+            "legendFormat": "Pinned"
+          }
+        ]
+      },
+      {
+        "title": "Available GPU Memory",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "gpu_memory_available_mb",
+            "legendFormat": "GPU {{ gpu_id }}"
+          }
+        ],
+        "unit": "mbytes"
+      },
+      {
+        "title": "Predictor Accuracy",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "predictor_accuracy * 100"
+          }
+        ],
+        "thresholds": "60,75,90",
+        "colors": ["red", "yellow", "green"]
+      },
+      {
+        "title": "Top 5 Models by Prediction Count",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(5, model:prediction_count:5m)"
+          }
+        ]
+      },
+      {
+        "title": "Model Average Latency",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "model:avg_latency:5m"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  },
+  "version": 1
+}

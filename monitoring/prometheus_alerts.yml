@@ -1,0 +1,269 @@
+groups:
+  - name: gpu_orchestrator_alerts
+    interval: 30s
+    rules:
+      # Critical Alerts (Page on-call)
+      
+      - alert: HighGPUMemoryUtilization
+        expr: |
+          ((gpu_memory_total_mb - gpu_memory_available_mb) / gpu_memory_total_mb) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          component: gpu
+        annotations:
+          summary: "GPU memory utilization critical ({{ $value | humanizePercentage }})"
+          description: "GPU {{ $labels.gpu_id }} memory utilization is {{ $value | humanizePercentage }}. Manual intervention may be needed."
+          runbook: "https://github.com/HarshithaJ28/gpu-vram-orchestrator/blob/main/TROUBLESHOOTING.md#issue-out-of-memory-oom-errors"
+
+      - alert: HighErrorRate
+        expr: |
+          rate(http_request_errors_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API error rate critical: {{ $value | humanizePercentage }}"
+          description: "Error rate exceeds 1% SLA. Check logs for details."
+          runbook: "TROUBLESHOOTING.md#issue-503-service-unavailable"
+
+      - alert: GPUOutOfMemory
+        expr: |
+          increase(gpu_oom_events_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: gpu
+        annotations:
+          summary: "GPU out of memory event detected"
+          description: "One or more OOM events recorded. Cache eviction may be aggressive."
+          runbook: "TROUBLESHOOTING.md#issue-out-of-memory-oom-errors"
+
+      - alert: SchedulerResponseTimeExceedsSLA
+        expr: |
+          histogram_quantile(0.99, rate(scheduler_selection_time_ms_bucket[5m])) > 5
+        for: 3m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Scheduler P99 latency exceeds SLA: {{ $value | humanize }}ms"
+          description: "Scheduler taking too long to select GPU. Check load and CPU."
+          runbook: "TROUBLESHOOTING.md#issue-high-latency--200ms"
+
+      - alert: APIDowntime
+        expr: |
+          up{job="gpu-orchestrator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "GPU Orchestrator API is down"
+          description: "API endpoint not responding to health checks."
+          runbook: "TROUBLESHOOTING.md"
+
+      # Warning Alerts (Notify, investigate, fix in next sprint)
+
+      - alert: LowCacheHitRate
+        expr: |
+          rate(gpu_cache_hits_total[5m]) / (rate(gpu_cache_hits_total[5m]) + rate(gpu_cache_misses_total[5m])) < 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Cache hit rate low: {{ $value | humanizePercentage }}"
+          description: "Cache hit rate below 50% target. Consider increasing cache size or improving prediction accuracy."
+          runbook: "TROUBLESHOOTING.md#issue-high-cache-miss-rate--60"
+
+      - alert: HighInferenceLatency
+        expr: |
+          histogram_quantile(0.99, rate(inference_latency_ms_bucket[5m])) > 200
+        for: 5m
+        labels:
+          severity: warning
+          component: inference
+        annotations:
+          summary: "Inference P99 latency high: {{ $value | humanize }}ms"
+          description: "Inference latency exceeds 200ms SLA. Check GPU utilization and model sizes."
+          runbook: "TROUBLESHOOTING.md#issue-high-latency--200ms"
+
+      - alert: FrequentModelEvictions
+        expr: |
+          rate(gpu_cache_evictions_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Frequent model evictions: {{ $value | humanize }}/sec"
+          description: "High eviction rate suggests cache thrashing. Pin critical models or increase cache size."
+          runbook: "TROUBLESHOOTING.md#issue-high-cache-miss-rate--60"
+
+      - alert: GPUUnderutilization
+        expr: |
+          avg(rate(gpu_inference_count_total[5m])) < 10
+        for: 10m
+        labels:
+          severity: warning
+          component: gpu
+        annotations:
+          summary: "GPU underutilized: {{ $value | humanize }} inferences/sec"
+          description: "Low inference rate suggests GPUs not fully utilized. Check load distribution."
+          runbook: "TROUBLESHOOTING.md#issue-gpu-underutilized"
+
+      - alert: HighMemoryPressure
+        expr: |
+          ((gpu_memory_total_mb - gpu_memory_available_mb) / gpu_memory_total_mb) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: gpu
+        annotations:
+          summary: "GPU memory pressure high: {{ $value | humanizePercentage }}"
+          description: "GPU memory usage above 85%. Approaching critical levels."
+          runbook: "TROUBLESHOOTING.md#issue-out-of-memory-oom-errors"
+
+      - alert: PredictorAccuracyLow
+        expr: |
+          predictor_accuracy < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          component: predictor
+        annotations:
+          summary: "Predictor accuracy low: {{ $value | humanizePercentage }}"
+          description: "Model access prediction accuracy below 70%. May reduce cache effectiveness."
+          runbook: "Increase history window or retrain predictor"
+
+      - alert: PrometheusMetricsHighCardinality
+        expr: |
+          prometheus_tsdb_sample_limits_hits_total > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Prometheus high cardinality detected"
+          description: "Metric cardinality exceeds limits. Check for label explosion."
+
+      - alert: HighSchedulerQueueDepth
+        expr: |
+          scheduler_queue_depth > 1000
+        for: 3m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "Scheduler queue depth high: {{ $value | humanize }}"
+          description: "Pending GPU selection requests backing up. Scale out deployment."
+          runbook: "TROUBLESHOOTING.md#issue-high-latency--200ms"
+
+      - alert: ModelLoadFailures
+        expr: |
+          increase(model_load_failures_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: model
+        annotations:
+          summary: "Model load failures detected: {{ $value | humanize }}"
+          description: "Issues loading models into GPU memory. Check available space."
+          runbook: "TROUBLESHOOTING.md#issue-out-of-memory-oom-errors"
+
+      # Info Alerts (Log for analysis)
+
+      - alert: CacheEvictionSpike
+        expr: |
+          increase(gpu_cache_evictions_total[2m]) > 50
+        for: 1m
+        labels:
+          severity: info
+          component: cache
+        annotations:
+          summary: "Cache eviction spike detected"
+          description: "Rapid evictions: {{ $value }} models removed. Natural load variation."
+
+      - alert: PredictivePreloadingActiveModels
+        expr: |
+          predictor_preloaded_models > 5
+        for: 5m
+        labels:
+          severity: info
+          component: predictor
+        annotations:
+          summary: "Predictive preloading actively managing {{ $value | humanize }} models"
+          description: "Predictor identified multiple access patterns."
+
+      - alert: SchedulerLoadBalancing
+        expr: |
+          stddev(rate(gpu_inference_count_total[5m])) > 20
+        for: 10m
+        labels:
+          severity: info
+          component: scheduler
+        annotations:
+          summary: "GPU load distribution imbalanced"
+          description: "Std deviation: {{ $value | humanize }}. Scheduler working to balance."
+
+# Recording Rules (Pre-computed aggregations)
+
+  - name: gpu_orchestrator_recording_rules
+    interval: 15s
+    rules:
+      # Cache efficiency
+      - record: cache:hit_rate:5m
+        expr: |
+          rate(gpu_cache_hits_total[5m]) / (rate(gpu_cache_hits_total[5m]) + rate(gpu_cache_misses_total[5m]))
+
+      - record: cache:eviction_rate:5m
+        expr: |
+          rate(gpu_cache_evictions_total[5m])
+
+      # GPU utilization
+      - record: gpu:memory_utilization:5m
+        expr: |
+          ((gpu_memory_total_mb - gpu_memory_available_mb) / gpu_memory_total_mb) * 100
+
+      - record: gpu:inference_rate:5m
+        expr: |
+          rate(gpu_inference_count_total[5m])
+
+      # Latency percentiles
+      - record: latency:p50:5m
+        expr: |
+          histogram_quantile(0.50, rate(inference_latency_ms_bucket[5m]))
+
+      - record: latency:p95:5m
+        expr: |
+          histogram_quantile(0.95, rate(inference_latency_ms_bucket[5m]))
+
+      - record: latency:p99:5m
+        expr: |
+          histogram_quantile(0.99, rate(inference_latency_ms_bucket[5m]))
+
+      # Error rates
+      - record: api:error_rate:5m
+        expr: |
+          rate(http_request_errors_total[5m]) / rate(http_requests_total[5m])
+
+      # Scheduler performance
+      - record: scheduler:response_time_p99:5m
+        expr: |
+          histogram_quantile(0.99, rate(scheduler_selection_time_ms_bucket[5m]))
+
+      # Model performance per model
+      - record: model:prediction_count:5m
+        expr: |
+          rate(model_inference_count_total[5m])
+
+      - record: model:avg_latency:5m
+        expr: |
+          rate(model_total_latency_ms_total[5m]) / rate(model_inference_count_total[5m])
+
+# Alert severity definitions
+# Critical: Page on-call immediately, impact on SLA
+# Warning: Notify team, should be fixed in this sprint
+# Info: Log for analysis, part of normal operations

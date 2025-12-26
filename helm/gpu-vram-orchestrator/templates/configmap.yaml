@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gpu-vram-orchestrator.fullname" . }}-config
+  labels:
+    {{- include "gpu-vram-orchestrator.labels" . | nindent 4 }}
+data:
+  cache_size_mb: "{{ .Values.cache.size_mb }}"
+  reserved_memory_mb: "{{ .Values.cache.reserved_memory_mb }}"
+  scheduler_memory_weight: "{{ .Values.scheduler.memory_weight }}"
+  scheduler_load_weight: "{{ .Values.scheduler.load_weight }}"
+  scheduler_affinity_weight: "{{ .Values.scheduler.affinity_weight }}"
+  scheduler_workers: "{{ .Values.scheduler.workers }}"
+  prediction_enabled: "{{ .Values.predictor.enabled }}"
+  prediction_window_hours: "{{ .Values.predictor.window_hours }}"
+  prediction_min_confidence: "{{ .Values.predictor.min_confidence }}"
+  prometheus_enabled: "{{ .Values.prometheus.enabled }}"
+  log_level: "{{ .Values.logging.level }}"
+  {{- with .Values.configMap.data }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}

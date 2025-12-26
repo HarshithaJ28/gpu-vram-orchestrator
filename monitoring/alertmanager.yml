@@ -1,0 +1,112 @@
+global:
+  resolve_timeout: 5m
+  slack_api_url: ${SLACK_WEBHOOK_URL}  # Set via environment variable
+  pagerduty_url: https://events.pagerduty.com/v2/enqueue
+
+# Grouping alerts to reduce spam
+route:
+  # Default receiver
+  receiver: 'default'
+  # Group by these labels to create alert groups
+  group_by: ['alertname', 'cluster', 'service']
+  # Time to wait before sending notifications
+  group_wait: 10s
+  # How long to wait after last alert before grouping is done
+  group_interval: 10s
+  # How long an alert should remain in the system after it has not been updated
+  repeat_interval: 12h
+  
+  # Routes for specific alert types
+  routes:
+    # Critical alerts - immediate Slack + PagerDuty
+    - match:
+        severity: critical
+      receiver: 'critical'
+      repeat_interval: 5m
+      group_wait: 5s
+      group_interval: 5s
+    
+    # Warning alerts - Slack notification
+    - match:
+        severity: warning
+      receiver: 'warnings'
+      repeat_interval: 4h
+      group_wait: 15s
+    
+    # Info alerts - log only
+    - match:
+        severity: info
+      receiver: 'info'
+      repeat_interval: 24h
+      group_wait: 30s
+
+# Receive configurations
+receivers:
+  # Default receiver (info alerts)
+  - name: 'default'
+    slack_configs:
+      - channel: '#gpu-orchestrator-info'
+        title: 'GPU Orchestrator Alert'
+        api_url: ${SLACK_WEBHOOK_URL}
+        send_resolved: false
+
+  # Critical alerts (page on-call)
+  - name: 'critical'
+    slack_configs:
+      - channel: '#gpu-orchestrator-alerts'
+        title: '🚨 CRITICAL: GPU Orchestrator Alert'
+        text: '{{ .GroupLabels.alertname }} - {{ .CommonAnnotations.summary }}'
+        api_url: ${SLACK_WEBHOOK_URL}
+        send_resolved: true
+    pagerduty_configs:
+      - service_key: ${PAGERDUTY_SERVICE_KEY}
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          Component: '{{ .GroupLabels.component }}'
+          Alert: '{{ .GroupLabels.alertname }}'
+          Summary: '{{ .CommonAnnotations.summary }}'
+
+  # Warning alerts - notify team
+  - name: 'warnings'
+    slack_configs:
+      - channel: '#gpu-orchestrator-warnings'
+        title: '⚠️ Warning: GPU Orchestrator'
+        text: '{{ .GroupLabels.alertname }}\n{{ .CommonAnnotations.summary }}'
+        api_url: ${SLACK_WEBHOOK_URL}
+        send_resolved: true
+
+  # Info alerts - logging
+  - name: 'info'
+    webhook_configs:
+      - url: 'http://localhost:5000/webhooks/alerts'  # Your logging endpoint
+        send_resolved: false
+
+# Inhibition rules to suppress certain alerts
+inhibit_rules:
+  # Suppress warning alerts if critical alert for same component is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['component']
+
+  # Don't spam about cache hit rate if we're out of memory  
+  - source_match:
+      alertname: 'HighGPUMemoryUtilization'
+    target_match:
+      alertname: 'LowCacheHitRate'
+    equal: ['gpu_id']
+
+  # Don't warn about events during restarts
+  - source_match:
+      alertname: 'APIDowntime'
+    target_match:
+      severity: 'warning'
+    equal: ['instance']
+
+  # Suppress cache eviction warnings during high memory pressure
+  - source_match:
+      alertname: 'HighMemoryPressure'
+    target_match:
+      alertname: 'FrequentModelEvictions'
+    equal: ['gpu_id']
