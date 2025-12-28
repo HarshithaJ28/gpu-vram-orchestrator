@@ -1,6 +1,6 @@
 """GPU Model Cache Module
 
-Thread-safe LRU cache for GPU models with smart eviction.
+Thread-safe LRU cache for GPU models with smart eviction and real PyTorch CUDA loading.
 """
 
 from collections import OrderedDict
@@ -8,8 +8,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import threading
 import time
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Tuple
 import logging
+import os
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,7 @@ class LoadedModel:
     access_count: int
     is_pinned: bool = False  # Never evict if pinned
     model: Any = None
+    model_path: str = ""
 
     @property
     def age_seconds(self) -> float:
@@ -119,17 +122,19 @@ class GPUModelCache:
     def load_model(
         self,
         model_id: str,
-        model: Any,
-        memory_mb: int,
+        model: Any = None,
+        model_path: str = "",
+        memory_mb: int = 0,
         pin: bool = False
     ) -> bool:
         """
-        Load model onto GPU
+        Load model onto GPU with REAL PyTorch CUDA loading
 
         Args:
             model_id: Unique model identifier
-            model: PyTorch/TensorFlow model object
-            memory_mb: Estimated memory usage
+            model: Pre-loaded PyTorch/TensorFlow model object (optional)
+            model_path: Path to model file if loading from disk
+            memory_mb: Estimated memory usage (auto-calculated if not provided)
             pin: If True, never evict this model
 
         Returns:
@@ -143,37 +148,72 @@ class GPUModelCache:
         with self.lock:
             # Already loaded?
             if model_id in self.models:
-                logger.info(f"Model {model_id} already loaded on GPU {self.gpu_id}")
+                loaded = self.models[model_id]
+                loaded.last_accessed = datetime.now()
+                loaded.access_count += 1
+                self.models.move_to_end(model_id)
+                logger.debug(f"Model {model_id} already on GPU {self.gpu_id}")
                 return True
 
-            # Size validation
-            if memory_mb <= 0:
-                logger.warning(f"Invalid memory size for {model_id}: {memory_mb}MB")
-                self.failed_loads += 1
-                return False
+            try:
+                # Determine memory requirement
+                if memory_mb <= 0:
+                    # Auto-estimate
+                    if model_path and os.path.exists(model_path):
+                        file_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+                        memory_mb = int(file_size_mb * 1.3)  # 1.3x for activations
+                    elif model is not None:
+                        memory_mb = self._estimate_model_memory(model)
+                    else:
+                        memory_mb = 1000  # Default 1GB
 
-            if memory_mb > self.available_memory_mb:
-                logger.error(
-                    f"Model {model_id} ({memory_mb}MB) exceeds available "
-                    f"GPU {self.gpu_id} memory ({self.available_memory_mb}MB)"
-                )
-                self.failed_loads += 1
-                return False
+                # Validate size
+                if memory_mb <= 0:
+                    logger.warning(f"Invalid memory size for {model_id}: {memory_mb}MB")
+                    self.failed_loads += 1
+                    return False
 
-            # Make space by evicting LRU models
-            while self.used_memory_mb + memory_mb > self.available_memory_mb:
-                if not self._evict_lru():
+                if memory_mb > self.available_memory_mb:
                     logger.error(
-                        f"Cannot free enough space for {model_id} "
-                        f"(need {memory_mb}MB, have {self.available_memory_mb - self.used_memory_mb}MB)"
+                        f"Model {model_id} ({memory_mb}MB) exceeds available "
+                        f"GPU {self.gpu_id} memory ({self.available_memory_mb}MB)"
                     )
                     self.failed_loads += 1
                     return False
 
-            # Load model
-            try:
-                # In real implementation, this would load to GPU
-                # For now, just track in cache
+                # Make space by evicting LRU models
+                while self.used_memory_mb + memory_mb > self.available_memory_mb:
+                    if not self._evict_lru():
+                        logger.error(
+                            f"Cannot free enough space for {model_id} "
+                            f"(need {memory_mb}MB, have {self.available_memory_mb - self.used_memory_mb}MB)"
+                        )
+                        self.failed_loads += 1
+                        return False
+
+                # REAL: Load model to GPU using PyTorch CUDA
+                if model is None and model_path:
+                    # Load from file
+                    if torch.cuda.is_available():
+                        model = torch.load(
+                            model_path,
+                            map_location=f'cuda:{self.gpu_id}'
+                        )
+                    else:
+                        model = torch.load(model_path, map_location='cpu')
+                        logger.warning(f"CUDA not available, loaded {model_id} on CPU")
+
+                if model is not None:
+                    # Move to eval mode and freeze
+                    if hasattr(model, 'eval'):
+                        model.eval()
+                    
+                    # Move to GPU if available
+                    if torch.cuda.is_available():
+                        model = model.to(f'cuda:{self.gpu_id}')
+                        logger.info(f"Moved {model_id} to cuda:{self.gpu_id}")
+
+                # Add to cache
                 self.models[model_id] = LoadedModel(
                     model_id=model_id,
                     memory_usage_mb=memory_mb,
@@ -181,21 +221,43 @@ class GPUModelCache:
                     last_accessed=datetime.now(),
                     access_count=1,
                     is_pinned=pin,
-                    model=model
+                    model=model,
+                    model_path=model_path
                 )
 
                 self.used_memory_mb += memory_mb
 
                 logger.info(
-                    f"Loaded {model_id} on GPU {self.gpu_id}: "
-                    f"{memory_mb}MB (total: {self.used_memory_mb}MB)"
+                    f"✓ Loaded {model_id} on GPU {self.gpu_id}: "
+                    f"{memory_mb}MB ({(self.used_memory_mb/self.available_memory_mb)*100:.1f}% util)"
                 )
                 return True
 
             except Exception as e:
-                logger.error(f"Failed to load {model_id}: {e}")
+                logger.error(f"✗ Failed to load {model_id}: {e}", exc_info=True)
                 self.failed_loads += 1
                 return False
+    
+    def _estimate_model_memory(self, model: Any) -> int:
+        """Estimate PyTorch model memory in MB"""
+        try:
+            # Count parameters
+            param_size = 0
+            buffer_size = 0
+            
+            if hasattr(model, 'parameters'):
+                for param in model.parameters():
+                    param_size += param.data.nelement() * param.data.element_size()
+            
+            if hasattr(model, 'buffers'):
+                for buffer in model.buffers():
+                    buffer_size += buffer.data.nelement() * buffer.data.element_size()
+            
+            total_mb = (param_size + buffer_size) / (1024 * 1024)
+            return max(int(total_mb * 1.3), 100)  # 1.3x for activations, min 100MB
+        except Exception as e:
+            logger.warning(f"Could not estimate model memory: {e}")
+            return 1000  # Default 1GB
 
     def _evict_lru(self) -> bool:
         """

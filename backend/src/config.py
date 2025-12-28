@@ -25,6 +25,7 @@ class Config:
 
     # Cache Settings
     MAX_PINNED_MODELS: int = int(os.getenv("MAX_PINNED_MODELS", "5"))
+    MODELS_DIR: str = os.getenv("MODELS_DIR", "./models")
 
     # Predictor Settings
     HISTORY_WINDOW_DAYS: int = int(os.getenv("HISTORY_WINDOW_DAYS", "30"))

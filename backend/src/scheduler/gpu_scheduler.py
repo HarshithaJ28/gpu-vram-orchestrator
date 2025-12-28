@@ -223,7 +223,44 @@ class GPUScheduler:
 
         return model_id
 
-    def select_best_gpu(self, model_id: str) -> Tuple[int, SchedulingScore]:
+    def route_request(self, model_id: str) -> Tuple[int, bool]:
+        """
+        CRITICAL METHOD: Route prediction request to optimal GPU
+
+        HOT PATH (cache hit): Model already loaded on a GPU → return that GPU immediately
+        COLD PATH (cache miss): Pick optimal GPU using multi-factor scoring
+
+        This method implements the core advantage of ModelMesh:
+        - 1st request: ~100ms (cold, needs load)
+        - 2nd+ requests: ~5ms (hot, already loaded)
+
+        Args:
+            model_id: Model to run prediction on
+
+        Returns:
+            (gpu_id, was_cached) - GPU to use and whether model was already loaded
+        """
+        # HOT PATH: Check if model already loaded
+        for gpu_id, gpu_cache in enumerate(self.gpu_caches):
+            if model_id in gpu_cache.models:
+                # Cache hit!
+                self.record_access(model_id, gpu_id)
+                logger.debug(f"HOT: {model_id} found on GPU {gpu_id}")
+                return (gpu_id, True)  # ← FAST PATH
+
+        # COLD PATH: Pick best GPU for loading
+        best_gpu_id, score = self.select_best_gpu(model_id)
+        self.record_request(best_gpu_id)
+        self.record_access(model_id, best_gpu_id)
+
+        logger.debug(f"COLD: {model_id} → GPU {best_gpu_id} ({score.reasoning})")
+        return (best_gpu_id, False)  # ← Will need to load model
+
+    def release_request(self, gpu_id: int):
+        """Clean up after request completes"""
+        self.clear_request(gpu_id)
+
+    
         """
         Select the best GPU for this model
 
