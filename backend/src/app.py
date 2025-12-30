@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from src.config import config
 from src.gpu import GPUDetector
@@ -18,6 +19,7 @@ from src.cache.gpu_cache import GPUModelCache
 from src.scheduler.gpu_scheduler import GPUScheduler
 from src.inference.engine import InferenceEngine, InferenceResult
 from src.registry import ModelRegistry
+from src.predictor import ModelAccessPredictor, ModelPreloader
 from src.monitoring.metrics import MetricsCollector
 
 # Configure logging
@@ -37,12 +39,15 @@ _scheduler: Optional[GPUScheduler] = None
 _inference_engine: Optional[InferenceEngine] = None
 _model_registry: Optional[ModelRegistry] = None
 _metrics: Optional[MetricsCollector] = None
+_predictor: Optional[ModelAccessPredictor] = None
+_preloader: Optional[ModelPreloader] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown"""
     global _gpu_detector, _gpu_caches, _scheduler, _inference_engine, _model_registry, _metrics
+    global _predictor, _preloader
 
     logger.info("=" * 80)
     logger.info("🚀 GPU VRAM Orchestrator (ModelMesh) Starting...")
@@ -84,8 +89,28 @@ async def lifespan(app: FastAPI):
         logger.info("✓ Inference engine initialized")
         logger.info("✓ Model registry initialized")
         logger.info("✓ Metrics collector initialized")
+
+        # Initialize ML-based predictor
+        _predictor = ModelAccessPredictor(
+            history_window_hours=24,
+            min_observations=5
+        )
+        logger.info("✓ Access pattern predictor initialized")
+
+        # Initialize and start preloader
+        _preloader = ModelPreloader(
+            predictor=_predictor,
+            scheduler=_scheduler,
+            registry=_model_registry,
+            interval_seconds=60,  # Run every minute
+            confidence_threshold=0.5,
+            max_preloads_per_cycle=3
+        )
+        await _preloader.start()
+        logger.info("✓ Model preloader started (cycle=60s, confidence=0.5)")
+
         logger.info("=" * 80)
-        logger.info("✓ ModelMesh Ready!")
+        logger.info("✓ ModelMesh Ready with Predictive Loading!")
         logger.info("=" * 80)
 
     except Exception as e:
@@ -97,6 +122,12 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down ModelMesh...")
     try:
+        # Stop preloader first
+        if _preloader:
+            await _preloader.stop()
+            logger.info("✓ Preloader stopped")
+        
+        # Clean up GPU memory
         for gpu_cache in _gpu_caches:
             gpu_cache.clear()
         logger.info("✓ Cleaned up GPU memory")
@@ -192,6 +223,10 @@ async def predict(request: PredictionRequest):
         gpu_cache = _gpu_caches[gpu_id]
 
         _scheduler.record_request(gpu_id)
+
+        # ===== STEP 1B: Record access for ML predictor =====
+        if _predictor:
+            _predictor.record_access(request.model_id, gpu_id)
 
         try:
             # ===== STEP 2: Get or load model =====
@@ -550,20 +585,278 @@ async def get_info():
     }
 
 
+# ============================================================================
+# MODEL REGISTRY ENDPOINTS (WEEK 2)
+# ============================================================================
+
+@app.post("/registry/register")
+async def register_model(
+    model_id: str,
+    model_path: str,
+    version: str = "v1",
+    framework: str = "pytorch",
+    task_type: str = "classification",
+    description: str = "",
+    tags: Optional[List[str]] = None
+):
+    """Register a new model in the registry"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        metadata = _model_registry.register_model(
+            model_id=model_id,
+            model_path=model_path,
+            version=version,
+            framework=framework,
+            task_type=task_type,
+            description=description,
+            tags=tags or []
+        )
+        return asdict(metadata)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Model registration failed: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/registry/models")
+async def list_registered_models(
+    framework: Optional[str] = None,
+    task_type: Optional[str] = None
+):
+    """List all registered models with optional filtering"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        models = _model_registry.list_models(
+            framework=framework,
+            task_type=task_type
+        )
+        return models
+    except Exception as e:
+        logger.error(f"Failed to list models: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/registry/models/{model_id}")
+async def get_model_metadata(model_id: str):
+    """Get metadata for specific model"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        metadata = _model_registry.get_model_metadata(model_id)
+        if not metadata:
+            raise HTTPException(404, f"Model {model_id} not found")
+        
+        return asdict(metadata)
+    except Exception as e:
+        logger.error(f"Failed to get model metadata: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.delete("/registry/models/{model_id}")
+async def delete_model(model_id: str):
+    """Delete a model from registry"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        success = _model_registry.delete_model(model_id)
+        if not success:
+            raise HTTPException(404, f"Model {model_id} not found")
+        
+        return {"deleted": model_id, "success": True}
+    except Exception as e:
+        logger.error(f"Failed to delete model: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/registry/search")
+async def search_models(query: str):
+    """Search models by query string"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        results = _model_registry.search_models(query)
+        return results
+    except Exception as e:
+        logger.error(f"Search failed: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/registry/models/{model_id}/verify")
+async def verify_model(model_id: str):
+    """Verify model file integrity"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        is_valid = _model_registry.verify_model(model_id)
+        return {
+            'model_id': model_id,
+            'valid': is_valid
+        }
+    except Exception as e:
+        logger.error(f"Verification failed: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/registry/stats")
+async def get_registry_stats():
+    """Get registry statistics"""
+    if not _model_registry:
+        raise HTTPException(500, "Registry not initialized")
+
+    try:
+        stats = _model_registry.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get stats: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ============================================================================
+# PREDICTOR ENDPOINTS (WEEK 2)
+# ============================================================================
+
+@app.get("/predictor/predictions")
+async def get_predictions(top_k: int = 5):
+    """Get current model predictions (most likely to be accessed soon)"""
+    if not _predictor:
+        raise HTTPException(500, "Predictor not initialized")
+
+    try:
+        predictions = _predictor.predict_next_models(top_k=top_k, min_probability=0.3)
+        return [
+            {'model_id': model_id, 'probability': float(prob)}
+            for model_id, prob in predictions
+        ]
+    except Exception as e:
+        logger.error(f"Failed to get predictions: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/predictor/patterns/{model_id}")
+async def get_model_patterns(model_id: str):
+    """Get learned access patterns for a specific model"""
+    if not _predictor:
+        raise HTTPException(500, "Predictor not initialized")
+
+    try:
+        patterns = _predictor.get_pattern_summary(model_id)
+        return patterns
+    except Exception as e:
+        logger.error(f"Failed to get patterns: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/predictor/stats")
+async def get_predictor_stats():
+    """Get predictor statistics"""
+    if not _predictor:
+        raise HTTPException(500, "Predictor not initialized")
+
+    try:
+        stats = _predictor.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get predictor stats: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ============================================================================
+# PRELOADER ENDPOINTS (WEEK 2)
+# ============================================================================
+
+@app.get("/preloader/stats")
+async def get_preloader_stats():
+    """Get preloader statistics"""
+    if not _preloader:
+        raise HTTPException(500, "Preloader not initialized")
+
+    try:
+        stats = _preloader.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get preloader stats: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/preloader/start")
+async def start_preloader():
+    """Start preloader (if stopped)"""
+    if not _preloader:
+        raise HTTPException(500, "Preloader not initialized")
+
+    try:
+        if _preloader.running:
+            return {'status': 'already_running'}
+        
+        await _preloader.start()
+        return {'status': 'started'}
+    except Exception as e:
+        logger.error(f"Failed to start preloader: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/preloader/stop")
+async def stop_preloader():
+    """Stop preloader"""
+    if not _preloader:
+        raise HTTPException(500, "Preloader not initialized")
+
+    try:
+        if not _preloader.running:
+            return {'status': 'already_stopped'}
+        
+        await _preloader.stop()
+        return {'status': 'stopped'}
+    except Exception as e:
+        logger.error(f"Failed to stop preloader: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/preloader/reset-stats")
+async def reset_preloader_stats():
+    """Reset preloader statistics"""
+    if not _preloader:
+        raise HTTPException(500, "Preloader not initialized")
+
+    try:
+        _preloader.reset_stats()
+        return {'status': 'reset'}
+    except Exception as e:
+        logger.error(f"Failed to reset stats: {e}")
+        raise HTTPException(500, str(e))
+
+
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
         'service': 'ModelMesh',
         'version': '1.0.0',
-        'description': 'Multi-model GPU serving with intelligent caching',
+        'description': 'Multi-model GPU serving with intelligent caching + predictive preloading',
         'docs': '/docs',
+        'features': {
+            'week1': ['GPU caching', 'Smart scheduling', 'LRU eviction', 'Batch inference'],
+            'week2': ['Model registry', 'ML predictive loading', 'Background preloader']
+        },
         'endpoints': {
             'prediction': '/predict (POST)',
             'batch_prediction': '/predict/batch (POST)',
+            'registry': '/registry/models (GET|POST|DELETE)',
+            'predictor': '/predictor/predictions (GET)',
+            'preloader': '/preloader/stats (GET)',
             'health': '/health (GET)',
-            'info': '/info (GET)',
-            'stats': '/stats/gpu (GET)'
+            'docs': '/docs (GET)'
         }
     }
 
