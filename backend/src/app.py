@@ -148,6 +148,79 @@ app = FastAPI(
 
 
 # ============================================================================
+# PROMETHEUS METRICS ENDPOINT
+# ============================================================================
+from prometheus_client import make_asgi_app
+try:
+    metrics_app = make_asgi_app()
+    app.mount("/prometheus", metrics_app)
+    logger.info("✓ Prometheus metrics mounted at /prometheus")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to mount Prometheus: {e}")
+
+
+# ============================================================================
+# SECURITY MIDDLEWARE - API KEY AUTHENTICATION
+# ============================================================================
+from fastapi import Header, HTTPException, Depends
+from functools import lru_cache
+import os
+
+@lru_cache(maxsize=1)
+def get_api_key() -> str:
+    """Get API key from environment"""
+    key = os.getenv("API_KEY", "default-key")
+    if key == "default-key":
+        logger.warning("⚠️  Using default API key - set API_KEY env var in production")
+    return key
+
+async def verify_api_key(x_api_key: str = Header(None)):
+    """Verify API key from request header"""
+    api_key_enabled = os.getenv("API_KEYS_ENABLED", "true").lower() == "true"
+    
+    if not api_key_enabled:
+        return True  # Skip auth if disabled
+    
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Provide 'X-API-Key' header"
+        )
+    
+    expected_key = get_api_key()
+    if x_api_key != expected_key:
+        logger.warning(f"Invalid API key attempted: {x_api_key[:8]}...")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
+    
+    return True
+
+
+# ============================================================================
+# RATE LIMITING MIDDLEWARE
+# ============================================================================
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request, exc):
+    """Handle rate limit exceeded"""
+    return JSONResponse(
+        status_code=429,
+        content={"error": "Rate limit exceeded", "detail": str(exc.detail)}
+    )
+
+logger.info("✓ Rate limiting configured")
+
+
+# ============================================================================
 # REQUEST/RESPONSE MODELS
 # ============================================================================
 
@@ -198,7 +271,8 @@ class ModelLoadRequest(BaseModel):
 # ============================================================================
 
 @app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
+@limiter.limit("100/minute")
+async def predict(request: PredictionRequest, api_key_valid: bool = Depends(verify_api_key)):
     """
     Make prediction using specified model
 
@@ -211,6 +285,9 @@ async def predict(request: PredictionRequest):
     **Response Time:**
     - First request (cold): ~100ms (includes model loading)
     - Subsequent requests (hot): ~5-10ms (cached)
+    
+    **Headers required:**
+    - X-API-Key: Your API key
     """
     start_time = time.time()
 
@@ -287,7 +364,8 @@ async def predict(request: PredictionRequest):
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse)
-async def predict_batch(request: BatchPredictionRequest):
+@limiter.limit("50/minute")
+async def predict_batch(request: BatchPredictionRequest, api_key_valid: bool = Depends(verify_api_key)):
     """
     Batch prediction for multiple inputs
 
