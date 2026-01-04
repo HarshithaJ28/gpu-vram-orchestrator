@@ -2,32 +2,54 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
+    cluster: 'modelmesh'
     environment: 'production'
-    service: 'gpu-vram-orchestrator'
 
-# Alertmanager configuration
+# Alert rules
+rule_files:
+  - 'alert_rules.yml'
+
 alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - 'localhost:9093'
+            - alertmanager:9093
 
-# Load rules files
-rule_files:
-  - '/etc/prometheus/alerts.yml'
-
+# Scrape configs
 scrape_configs:
-  # GPU Orchestrator API
-  - job_name: 'gpu-orchestrator'
+  # ModelMesh application metrics
+  - job_name: 'modelmesh'
     static_configs:
-      - targets: ['localhost:8001']
-    scrape_interval: 30s
-    scrape_timeout: 10s
-    metrics_path: '/metrics'
+      - targets: ['modelmesh:8000']
+        labels:
+          service: 'modelmesh'
+    metrics_path: '/prometheus'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    honor_labels: true
+    
+    # Relabel configs for security
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
-        regex: '([^:]+)'
+      - source_labels: [__scheme__]
+        target_label: scheme
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+    metrics_path: '/metrics'
+
+  # AlertManager metrics
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          service: 'alertmanager'
+    metrics_path: '/metrics'
         replacement: '${1}:8001'
 
   # Prometheus itself

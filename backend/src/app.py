@@ -6,7 +6,9 @@ Production-grade GPU VRAM Orchestrator API
 import logging
 import time
 import traceback
+import os
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -21,6 +23,12 @@ from src.inference.engine import InferenceEngine, InferenceResult
 from src.registry import ModelRegistry
 from src.predictor import ModelAccessPredictor, ModelPreloader
 from src.monitoring.metrics import MetricsCollector
+from src.security import (
+    APIKeyManager, 
+    RateLimiter,
+    verify_api_key as security_verify_api_key,
+    check_rate_limit
+)
 
 # Configure logging
 logging.basicConfig(
@@ -160,64 +168,19 @@ except Exception as e:
 
 
 # ============================================================================
-# SECURITY MIDDLEWARE - API KEY AUTHENTICATION
+# SECURITY MIDDLEWARE - COMPREHENSIVE API KEY & RATE LIMITING
 # ============================================================================
-from fastapi import Header, HTTPException, Depends
-from functools import lru_cache
-import os
+from fastapi import Depends
 
-@lru_cache(maxsize=1)
-def get_api_key() -> str:
-    """Get API key from environment"""
-    key = os.getenv("API_KEY", "default-key")
-    if key == "default-key":
-        logger.warning("⚠️  Using default API key - set API_KEY env var in production")
-    return key
+# Initialize security managers
+api_key_manager = APIKeyManager()
+rate_limiter = RateLimiter(
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "100")),
+    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000"))
+)
 
-async def verify_api_key(x_api_key: str = Header(None)):
-    """Verify API key from request header"""
-    api_key_enabled = os.getenv("API_KEYS_ENABLED", "true").lower() == "true"
-    
-    if not api_key_enabled:
-        return True  # Skip auth if disabled
-    
-    if not x_api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing API key. Provide 'X-API-Key' header"
-        )
-    
-    expected_key = get_api_key()
-    if x_api_key != expected_key:
-        logger.warning(f"Invalid API key attempted: {x_api_key[:8]}...")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key"
-        )
-    
-    return True
-
-
-# ============================================================================
-# RATE LIMITING MIDDLEWARE
-# ============================================================================
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from starlette.responses import JSONResponse
-
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_exceeded_handler(request, exc):
-    """Handle rate limit exceeded"""
-    return JSONResponse(
-        status_code=429,
-        content={"error": "Rate limit exceeded", "detail": str(exc.detail)}
-    )
-
-logger.info("✓ Rate limiting configured")
+logger.info(f"✓ Security module initialized")
+logger.info(f"  Rate limits: {rate_limiter.requests_per_minute}/min, {rate_limiter.requests_per_hour}/hour")
 
 
 # ============================================================================
@@ -271,8 +234,11 @@ class ModelLoadRequest(BaseModel):
 # ============================================================================
 
 @app.post("/predict", response_model=PredictionResponse)
-@limiter.limit("100/minute")
-async def predict(request: PredictionRequest, api_key_valid: bool = Depends(verify_api_key)):
+async def predict(
+    request: PredictionRequest,
+    api_key: str = Depends(security_verify_api_key),
+    _: None = Depends(check_rate_limit)
+):
     """
     Make prediction using specified model
 
@@ -364,8 +330,11 @@ async def predict(request: PredictionRequest, api_key_valid: bool = Depends(veri
 
 
 @app.post("/predict/batch", response_model=BatchPredictionResponse)
-@limiter.limit("50/minute")
-async def predict_batch(request: BatchPredictionRequest, api_key_valid: bool = Depends(verify_api_key)):
+async def predict_batch(
+    request: BatchPredictionRequest,
+    api_key: str = Depends(security_verify_api_key),
+    _: None = Depends(check_rate_limit)
+):
     """
     Batch prediction for multiple inputs
 
@@ -612,7 +581,7 @@ async def get_prediction_metrics():
 # ============================================================================
 
 @app.get("/health")
-async def health_check():
+async def health_check(api_key: str = Depends(security_verify_api_key)):
     """Health check endpoint"""
     total_models = sum(len(gpu.models) for gpu in _gpu_caches) if _gpu_caches else 0
     avg_util = (
@@ -801,11 +770,131 @@ async def get_registry_stats():
 
 
 # ============================================================================
+# ADMIN ENDPOINTS - API KEY & SECURITY MANAGEMENT
+# ============================================================================
+
+@app.post("/admin/keys/generate")
+async def generate_api_key(
+    name: str,
+    admin_key: str = Depends(security_verify_api_key)
+):
+    """
+    Generate a new API key
+    
+    Requires valid admin API key
+    """
+    try:
+        key = api_key_manager.generate_key(name)
+        logger.info(f"Generated new API key: {name}")
+        
+        return {
+            'key': key,
+            'name': name,
+            'created': datetime.now().isoformat(),
+            'status': 'active'
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate API key: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/admin/keys/revoke/{key_id}")
+async def revoke_api_key(
+    key_id: str,
+    admin_key: str = Depends(security_verify_api_key)
+):
+    """
+    Revoke an existing API key
+    
+    Requires valid admin API key
+    """
+    try:
+        success = api_key_manager.revoke_key(key_id)
+        if not success:
+            raise HTTPException(404, f"API key {key_id} not found")
+        
+        logger.info(f"Revoked API key: {key_id}")
+        
+        return {
+            'key_id': key_id,
+            'status': 'revoked',
+            'revoked_at': datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to revoke API key: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/admin/keys/list")
+async def list_api_keys(admin_key: str = Depends(security_verify_api_key)):
+    """
+    List all active API keys
+    
+    Requires valid admin API key
+    """
+    try:
+        keys = api_key_manager.list_keys()
+        
+        return {
+            'total': len(keys),
+            'keys': [
+                {
+                    'key_id': key,
+                    'name': api_key_manager.get_key_info(key).get('name', 'unknown'),
+                    'created': api_key_manager.get_key_info(key).get('created', 'unknown'),
+                    'usage_count': api_key_manager.get_key_info(key).get('usage_count', 0)
+                }
+                for key in keys
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to list API keys: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/admin/usage")
+async def get_usage_stats(admin_key: str = Depends(security_verify_api_key)):
+    """
+    Get API usage statistics
+    
+    Requires valid admin API key
+    """
+    try:
+        usage_stats = {}
+        
+        for key in api_key_manager.list_keys():
+            key_info = api_key_manager.get_key_info(key)
+            rate_limit_stats = rate_limiter.get_stats(key)
+            
+            usage_stats[key] = {
+                'name': key_info.get('name', 'unknown'),
+                'created': key_info.get('created', 'unknown'),
+                'usage_count': key_info.get('usage_count', 0),
+                'rate_limit': {
+                    'remaining_minute': rate_limit_stats.get('remaining_minute', 0),
+                    'remaining_hour': rate_limit_stats.get('remaining_hour', 0),
+                    'reset_minute': rate_limit_stats.get('reset_minute', 'N/A'),
+                    'reset_hour': rate_limit_stats.get('reset_hour', 'N/A')
+                }
+            }
+        
+        return usage_stats
+    except Exception as e:
+        logger.error(f"Failed to get usage stats: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ============================================================================
 # PREDICTOR ENDPOINTS (WEEK 2)
 # ============================================================================
 
 @app.get("/predictor/predictions")
-async def get_predictions(top_k: int = 5):
+async def get_predictions(
+    top_k: int = 5,
+    api_key: str = Depends(security_verify_api_key)
+):
     """Get current model predictions (most likely to be accessed soon)"""
     if not _predictor:
         raise HTTPException(500, "Predictor not initialized")
@@ -822,7 +911,10 @@ async def get_predictions(top_k: int = 5):
 
 
 @app.get("/predictor/patterns/{model_id}")
-async def get_model_patterns(model_id: str):
+async def get_model_patterns(
+    model_id: str,
+    api_key: str = Depends(security_verify_api_key)
+):
     """Get learned access patterns for a specific model"""
     if not _predictor:
         raise HTTPException(500, "Predictor not initialized")
@@ -836,7 +928,7 @@ async def get_model_patterns(model_id: str):
 
 
 @app.get("/predictor/stats")
-async def get_predictor_stats():
+async def get_predictor_stats(api_key: str = Depends(security_verify_api_key)):
     """Get predictor statistics"""
     if not _predictor:
         raise HTTPException(500, "Predictor not initialized")
@@ -854,7 +946,7 @@ async def get_predictor_stats():
 # ============================================================================
 
 @app.get("/preloader/stats")
-async def get_preloader_stats():
+async def get_preloader_stats(api_key: str = Depends(security_verify_api_key)):
     """Get preloader statistics"""
     if not _preloader:
         raise HTTPException(500, "Preloader not initialized")
@@ -868,7 +960,7 @@ async def get_preloader_stats():
 
 
 @app.post("/preloader/start")
-async def start_preloader():
+async def start_preloader(admin_key: str = Depends(security_verify_api_key)):
     """Start preloader (if stopped)"""
     if not _preloader:
         raise HTTPException(500, "Preloader not initialized")
@@ -885,7 +977,7 @@ async def start_preloader():
 
 
 @app.post("/preloader/stop")
-async def stop_preloader():
+async def stop_preloader(admin_key: str = Depends(security_verify_api_key)):
     """Stop preloader"""
     if not _preloader:
         raise HTTPException(500, "Preloader not initialized")
@@ -902,7 +994,7 @@ async def stop_preloader():
 
 
 @app.post("/preloader/reset-stats")
-async def reset_preloader_stats():
+async def reset_preloader_stats(admin_key: str = Depends(security_verify_api_key)):
     """Reset preloader statistics"""
     if not _preloader:
         raise HTTPException(500, "Preloader not initialized")
@@ -925,12 +1017,14 @@ async def root():
         'docs': '/docs',
         'features': {
             'week1': ['GPU caching', 'Smart scheduling', 'LRU eviction', 'Batch inference'],
-            'week2': ['Model registry', 'ML predictive loading', 'Background preloader']
+            'week2': ['Model registry', 'ML predictive loading', 'Background preloader'],
+            'week3': ['API key management', 'Rate limiting', 'Security authentication']
         },
         'endpoints': {
             'prediction': '/predict (POST)',
             'batch_prediction': '/predict/batch (POST)',
             'registry': '/registry/models (GET|POST|DELETE)',
+            'admin': '/admin/keys/* (POST|GET)',
             'predictor': '/predictor/predictions (GET)',
             'preloader': '/preloader/stats (GET)',
             'health': '/health (GET)',

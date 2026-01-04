@@ -1,136 +1,237 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gpu-vram-orchestrator
+  name: modelmesh
   namespace: default
   labels:
-    app: gpu-vram-orchestrator
+    app: modelmesh
     version: v1
+    component: inference
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
-      app: gpu-vram-orchestrator
+      app: modelmesh
   template:
     metadata:
       labels:
-        app: gpu-vram-orchestrator
+        app: modelmesh
         version: v1
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
-        prometheus.io/path: "/metrics"
+        prometheus.io/path: "/prometheus"
     spec:
-      # Request GPU resources
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      # Service account
+      serviceAccountName: modelmesh
+      
+      # Container specification
       containers:
-      - name: gpu-vram-orchestrator
-        image: gpu-vram-orchestrator:latest
-        imagePullPolicy: Always
+      - name: modelmesh
+        image: modelmesh:latest
+        imagePullPolicy: IfNotPresent
         
         # Port configuration
         ports:
         - name: http
           containerPort: 8000
           protocol: TCP
-        - name: metrics
-          containerPort: 8000
-          protocol: TCP
+          hostPort: 8000
+        
+        # Security context for container
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
         
         # Resource requests and limits
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "2"
-            nvidia.com/gpu: "1"  # Request 1 GPU
-          limits:
             memory: "4Gi"
-            cpu: "4"
-            nvidia.com/gpu: "1"
+            cpu: "2000m"
+            nvidia.com/gpu: "2"  # Request 2 GPUs
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            nvidia.com/gpu: "2"
         
         # Environment variables
         env:
-        - name: GPU_MAX_MEMORY_FRACTION
-          value: "0.9"
-        - name: PROMETHEUS_ENABLED
+        # API Key (from secret)
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: modelmesh-secrets
+              key: api-key
+              optional: false
+        
+        # Rate limiting
+        - name: RATE_LIMIT_PER_MINUTE
+          value: "100"
+        - name: RATE_LIMIT_PER_HOUR
+          value: "1000"
+        
+        # GPU configuration
+        - name: NUM_GPUS
+          value: "2"
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0,1"
+        - name: GPU_ENABLED
           value: "true"
+        
+        # Logging
         - name: LOG_LEVEL
           value: "INFO"
-        - name: CACHE_SIZE_MB
-          valueFrom:
-            configMapKeyRef:
-              name: gpu-orchestrator-config
-              key: cache_size_mb
-        - name: SCHEDULER_WORKERS
-          valueFrom:
-            configMapKeyRef:
-              name: gpu-orchestrator-config
-              key: scheduler_workers
         
-        # Probes for health checking
+        # Prometheus
+        - name: PROMETHEUS_ENABLED
+          value: "true"
+        
+        # Cache configuration
+        - name: CACHE_SIZE_MB
+          value: "16000"
+        - name: MODELS_DIR
+          value: "/app/models"
+        
+        # Scheduler configuration
+        - name: SCHEDULER_WORKERS
+          value: "8"
+        
+        # Volume mounts
+        volumeMounts:
+        - name: models
+          mountPath: /app/models
+          readOnly: false
+        - name: logs
+          mountPath: /app/logs
+        - name: config
+          mountPath: /etc/modelmesh
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        
+        # Liveness probe - check if service is alive
         livenessProbe:
           httpGet:
             path: /health
             port: http
+            httpHeaders:
+            - name: X-API-Key
+              value: admin-key
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        
+        # Readiness probe - check if service is ready to accept traffic
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+            httpHeaders:
+            - name: X-API-Key
+              value: admin-key
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
-        
-        readinessProbe:
-          httpGet:
-            path: /status
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+          successThreshold: 1
           failureThreshold: 2
         
-        # Volume mounts
-        volumeMounts:
-        - name: config
-          mountPath: /etc/gpu-orchestrator
-          readOnly: true
-        - name: cache
-          mountPath: /var/cache/models
+        # Startup probe - check if container has started
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+            httpHeaders:
+            - name: X-API-Key
+              value: admin-key
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 30  # 150 seconds max startup
+      
+      # Pod affinity to spread across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - modelmesh
+              topologyKey: kubernetes.io/hostname
       
       # Node selector for GPU nodes
       nodeSelector:
-        accelerator: nvidia-gpu
+        nvidia.com/gpu: "true"
       
-      # GPU toleration
+      # Tolerations for GPU nodes
       tolerations:
       - key: nvidia.com/gpu
         operator: Equal
         value: "true"
         effect: NoSchedule
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoExecute
       
       # Volumes
       volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: modelmesh-models-pvc
+      - name: logs
+        emptyDir:
+          sizeLimit: 5Gi
       - name: config
         configMap:
-          name: gpu-orchestrator-config
-      - name: cache
+          name: modelmesh-config
+      - name: tmp
         emptyDir:
-          sizeLimit: 50Gi
+          sizeLimit: 10Gi
       
       # Restart policy
       restartPolicy: Always
       
-      # Service account
-      serviceAccountName: gpu-orchestrator
+      # DNS policy
+      dnsPolicy: ClusterFirst
+      
+      # Schedule
+      schedulerName: default-scheduler
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: gpu-orchestrator
+  name: modelmesh
   namespace: default
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: gpu-orchestrator
+  name: modelmesh
   namespace: default
 rules:
 - apiGroups: [""]
@@ -138,7 +239,10 @@ rules:
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
   resources: ["configmaps"]
-  verbs: ["get", "list"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
@@ -147,7 +251,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: gpu-orchestrator
+  name: modelmesh
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: modelmesh
+subjects:
+- kind: ServiceAccount
+  name: modelmesh
+  namespace: default
   namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io

@@ -1,26 +1,46 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gpu-orchestrator-config
+  name: modelmesh-config
   namespace: default
+  labels:
+    app: modelmesh
+    component: config
 data:
   # Cache configuration
-  cache_size_mb: "24000"  # 24 GB GPU cache
+  cache_size_mb: "16000"  # 16 GB GPU cache per GPU
   
   # Scheduler configuration
-  scheduler_workers: "4"
+  scheduler_workers: "8"
   scheduler_memory_weight: "0.5"
   scheduler_load_weight: "0.3"
   scheduler_affinity_weight: "0.2"
+  
+  # GPU configuration
+  num_gpus: "2"
+  gpu_memory_fraction: "0.9"
+  
+  # Security configuration
+  api_keys_enabled: "true"
+  rate_limit_per_minute: "100"
+  rate_limit_per_hour: "1000"
   
   # Prediction configuration
   prediction_enabled: "true"
   prediction_window_hours: "24"
   prediction_min_confidence: "0.6"
+  prediction_min_observations: "5"
+  
+  # Preloading configuration
+  preloader_enabled: "true"
+  preloader_cycle_seconds: "60"
+  preloader_max_per_cycle: "3"
+  preloader_confidence_threshold: "0.5"
   
   # Monitoring configuration
   metrics_enabled: "true"
-  metrics_export_interval_seconds: "60"
+  prometheus_enabled: "true"
+  metrics_export_interval_seconds: "15"
   
   # Application configuration
   app_max_connections: "1000"
@@ -31,12 +51,15 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gpu-orchestrator-logging
+  name: modelmesh-logging
   namespace: default
+  labels:
+    app: modelmesh
+    component: logging
 data:
   logging.conf: |
     [loggers]
-    keys=root,orchestrator,scheduler,cache,predictor,monitoring
+    keys=root,modelmesh,security,scheduler,cache,predictor,monitoring,inference
     
     [handlers]
     keys=console,file
@@ -48,10 +71,16 @@ data:
     level=INFO
     handlers=console,file
     
-    [logger_orchestrator]
-    level=DEBUG
+    [logger_modelmesh]
+    level=INFO
     handlers=console,file
-    qualname=orchestrator
+    qualname=modelmesh
+    propagate=0
+    
+    [logger_security]
+    level=INFO
+    handlers=console,file
+    qualname=security
     propagate=0
     
     [logger_scheduler]
@@ -78,6 +107,12 @@ data:
     qualname=monitoring
     propagate=0
     
+    [logger_inference]
+    level=INFO
+    handlers=console,file
+    qualname=inference
+    propagate=0
+    
     [handler_console]
     class=StreamHandler
     level=DEBUG
@@ -88,7 +123,7 @@ data:
     class=handlers.RotatingFileHandler
     level=DEBUG
     formatter=detailed
-    args=('/var/log/gpu-orchestrator.log', 'a', 10485760, 5)
+    args=('/app/logs/modelmesh.log', 'a', 10485760, 5)
     
     [formatter_detailed]
     format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
