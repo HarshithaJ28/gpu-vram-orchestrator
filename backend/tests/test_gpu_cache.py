@@ -46,7 +46,7 @@ class TestGPUModelCache:
 
     def test_load_model_success(self, cache):
         """Load model successfully"""
-        result = cache.load_model("model-a", None, 3000)
+        result = cache.load_model("model-a", memory_mb=3000)
 
         assert result is True
         assert cache.used_memory_mb == 3000
@@ -55,7 +55,7 @@ class TestGPUModelCache:
     def test_load_model_too_large(self, cache):
         """Load model that's too large fails"""
         # Available is 11000 MB
-        result = cache.load_model("model-a", None, 12000)
+        result = cache.load_model("model-a", memory_mb=12000)
 
         assert result is False
         assert cache.used_memory_mb == 0
@@ -63,17 +63,17 @@ class TestGPUModelCache:
 
     def test_load_model_duplicate(self, cache):
         """Loading duplicate model returns success but doesn't re-add"""
-        cache.load_model("model-a", None, 3000)
+        cache.load_model("model-a", memory_mb=3000)
         used_before = cache.used_memory_mb
 
-        result = cache.load_model("model-a", None, 3000)
+        result = cache.load_model("model-a", memory_mb=3000)
 
         assert result is True
         assert cache.used_memory_mb == used_before  # No change
 
     def test_get_model_cache_hit(self, cache):
         """get_model returns model on cache hit"""
-        cache.load_model("model-a", None, 3000)
+        cache.load_model("model-a", memory_mb=3000)
 
         model = cache.get_model("model-a")
 
@@ -92,16 +92,16 @@ class TestGPUModelCache:
 
     def test_get_model_updates_lru_order(self, cache):
         """get_model moves model to end (most recently used)"""
-        cache.load_model("model-a", None, 3000)
-        cache.load_model("model-b", None, 3000)
-        cache.load_model("model-c", None, 3000)
+        cache.load_model("model-a", memory_mb=3000)
+        cache.load_model("model-b", memory_mb=3000)
+        cache.load_model("model-c", memory_mb=3000)
 
         # Get model-a (should move to end, access_count increases)
         cache.get_model("model-a")
 
         # Evict - should remove model-b (now LRU), not model-a
         # Available: 11000, Used: 9000, Need: 3000, Force evict: 3000
-        cache.load_model("model-d", None, 3000)
+        cache.load_model("model-d", memory_mb=3000)
 
         assert "model-a" in cache.models  # Recently accessed
         assert "model-b" not in cache.models  # LRU (was evicted)
@@ -109,15 +109,15 @@ class TestGPUModelCache:
 
     def test_lru_eviction_basic(self, cache):
         """LRU eviction removes oldest model"""
-        cache.load_model("model-a", None, 3000)
-        cache.load_model("model-b", None, 3000)
-        cache.load_model("model-c", None, 3000)
+        cache.load_model("model-a", memory_mb=3000)
+        cache.load_model("model-b", memory_mb=3000)
+        cache.load_model("model-c", memory_mb=3000)
 
         # Used: 9000, Available: 11000
         assert cache.used_memory_mb == 9000
 
         # Load model that forces eviction (9000 + 3000 > 11000)
-        cache.load_model("model-d", None, 3000)
+        cache.load_model("model-d", memory_mb=3000)
 
         # model-a should be evicted (LRU)
         assert "model-a" not in cache.models
@@ -128,14 +128,14 @@ class TestGPUModelCache:
 
     def test_pinned_models_never_evicted(self, cache):
         """Pinned models never get evicted"""
-        cache.load_model("fraud-v1", None, 3000, pin=True)
-        cache.load_model("model-b", None, 3000)
-        cache.load_model("model-c", None, 3000)
+        cache.load_model("fraud-v1", memory_mb=3000, pin=True)
+        cache.load_model("model-b", memory_mb=3000)
+        cache.load_model("model-c", memory_mb=3000)
 
         assert cache.used_memory_mb == 9000
 
         # Load model that forces eviction
-        cache.load_model("model-d", None, 3000)
+        cache.load_model("model-d", memory_mb=3000)
 
         # fraud-v1 should still be there (pinned)
         assert "fraud-v1" in cache.models
@@ -144,7 +144,7 @@ class TestGPUModelCache:
 
     def test_pin_model_success(self, cache):
         """pin_model sets pinned flag"""
-        cache.load_model("model-a", None, 2000)
+        cache.load_model("model-a", memory_mb=2000)
 
         result = cache.pin_model("model-a")
 
@@ -159,7 +159,7 @@ class TestGPUModelCache:
 
     def test_unpin_model_success(self, cache):
         """unpin_model clears pinned flag"""
-        cache.load_model("model-a", None, 2000, pin=True)
+        cache.load_model("model-a", memory_mb=2000, pin=True)
 
         result = cache.unpin_model("model-a")
 
@@ -168,7 +168,7 @@ class TestGPUModelCache:
 
     def test_unload_model_success(self, cache):
         """unload_model removes model"""
-        cache.load_model("model-a", None, 3000)
+        cache.load_model("model-a", memory_mb=3000)
         assert cache.used_memory_mb == 3000
 
         result = cache.unload_model("model-a")
@@ -185,7 +185,7 @@ class TestGPUModelCache:
 
     def test_get_stats_complete(self, cache):
         """get_stats returns comprehensive statistics"""
-        cache.load_model("model-a", None, 2000)
+        cache.load_model("model-a", memory_mb=2000)
         cache.get_model("model-a")  # Hit
         cache.get_model("nonexistent")  # Miss
 
@@ -207,7 +207,7 @@ class TestGPUModelCache:
         assert cache.get_stats()['hit_rate'] == 0.0
 
         # Load and hit
-        cache.load_model("model-a", None, 2000)
+        cache.load_model("model-a", memory_mb=2000)
         cache.get_model("model-a")  # Hit
         cache.get_model("model-a")  # Hit
         cache.get_model("nonexistent")  # Miss
@@ -218,8 +218,8 @@ class TestGPUModelCache:
 
     def test_clear_cache(self, cache):
         """clear empties the cache"""
-        cache.load_model("model-a", None, 3000)
-        cache.load_model("model-b", None, 3000)
+        cache.load_model("model-a", memory_mb=3000)
+        cache.load_model("model-b", memory_mb=3000)
 
         assert len(cache.models) == 2
         assert cache.used_memory_mb == 6000
@@ -237,7 +237,7 @@ class TestGPUModelCache:
 
         def load_models():
             for i in range(10):
-                cache.load_model(f"model-{i}", None, 1000)
+                cache.load_model(f"model-{i}", memory_mb=1000)
 
         threads = [threading.Thread(target=load_models) for _ in range(3)]
 
@@ -255,20 +255,20 @@ class TestGPUModelCache:
     def test_sequential_load_evict_reuse(self, cache):
         """Realistic scenario: load, evict, reload"""
         # Load model-a
-        assert cache.load_model("model-a", None, 4000) is True
+        assert cache.load_model("model-a", memory_mb=4000) is True
         assert cache.used_memory_mb == 4000
 
         # Load model-b
-        assert cache.load_model("model-b", None, 4000) is True
+        assert cache.load_model("model-b", memory_mb=4000) is True
         assert cache.used_memory_mb == 8000
 
         # Load model-c, forces eviction of model-a
-        assert cache.load_model("model-c", None, 4000) is True
+        assert cache.load_model("model-c", memory_mb=4000) is True
         assert "model-a" not in cache.models
         assert cache.used_memory_mb == 8000
 
         # Re-load model-a (model-b gets evicted)
-        assert cache.load_model("model-a", None, 4000) is True
+        assert cache.load_model("model-a", memory_mb=4000) is True
         assert "model-b" not in cache.models
         assert cache.used_memory_mb == 8000
 
@@ -284,11 +284,11 @@ class TestGPUModelCacheCritical:
         cache = GPUModelCache(gpu_id=0, total_memory_mb=5000, reserved_memory_mb=1000)
 
         # Available = 4000 MB
-        cache.load_model("model-a", None, 2000)
-        cache.load_model("model-b", None, 2000)
+        cache.load_model("model-a", memory_mb=2000)
+        cache.load_model("model-b", memory_mb=2000)
 
         # This should fail or evict
-        cache.load_model("model-c", None, 2000)
+        cache.load_model("model-c", memory_mb=2000)
 
         assert cache.used_memory_mb <= cache.available_memory_mb
 
@@ -299,11 +299,11 @@ class TestGPUModelCacheCritical:
         """
         cache = GPUModelCache(gpu_id=0, total_memory_mb=5000, reserved_memory_mb=1000)
 
-        cache.load_model("critical-model", None, 2000, pin=True)
-        cache.load_model("model-b", None, 2000)
+        cache.load_model("critical-model", memory_mb=2000, pin=True)
+        cache.load_model("model-b", memory_mb=2000)
 
         # Force eviction
-        cache.load_model("model-c", None, 2000)
+        cache.load_model("model-c", memory_mb=2000)
 
         assert "critical-model" in cache.models
 
@@ -315,7 +315,7 @@ class TestGPUModelCacheCritical:
         cache = GPUModelCache(gpu_id=0, total_memory_mb=5000, reserved_memory_mb=1000)
 
         for i in range(100):
-            cache.load_model(f"model-{i}", None, 100)
+            cache.load_model(f"model-{i}", memory_mb=100)
             cache.get_model(f"model-{i}")
 
         stats = cache.get_stats()
@@ -329,6 +329,6 @@ class TestGPUModelCacheCritical:
         cache = GPUModelCache(gpu_id=0, total_memory_mb=5000, reserved_memory_mb=1000)
 
         for i in range(5):
-            cache.load_model(f"model-{i}", None, 3000)
+            cache.load_model(f"model-{i}", memory_mb=3000)
             cache.unload_model(f"model-{i}")
             assert cache.used_memory_mb == 0  # Fully recovered

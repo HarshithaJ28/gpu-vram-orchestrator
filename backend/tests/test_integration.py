@@ -72,7 +72,7 @@ class TestIntegrationComponentsWork:
         metrics = MetricsCollector(use_prometheus=False)
 
         # Load a model
-        loaded = cache.load_model(model_id="test-model", model=None, size_mb=100)
+        loaded = cache.load_model(model_id="test-model", memory_mb=100)
         
         # Record metrics
         metrics.record_cache_miss(gpu_id=0)
@@ -86,8 +86,11 @@ class TestIntegrationComponentsWork:
 
     def test_predictor_and_scheduler_integration(self):
         """Test predictor and scheduler working together"""
+        # Create GPU caches first
+        gpu_cache = GPUModelCache(gpu_id=0, total_memory_mb=24000, reserved_memory_mb=1000)
+        
         predictor = AccessPatternPredictor()
-        scheduler = GPUScheduler()
+        scheduler = GPUScheduler(gpu_caches=[gpu_cache])
 
         # Record access patterns
         predictor.record_access("fraud-detection")
@@ -101,11 +104,13 @@ class TestIntegrationComponentsWork:
         # Use scheduler to select GPU
         gpu_id, score = scheduler.select_best_gpu("fraud-detection")
         assert gpu_id >= 0
-        assert score >= 0
+        assert score.total_score >= 0
 
     def test_scheduler_deterministic_selection(self):
         """Test scheduler produces consistent selections"""
-        scheduler = GPUScheduler()
+        # Create GPU cache first
+        gpu_cache = GPUModelCache(gpu_id=0, total_memory_mb=24000, reserved_memory_mb=1000)
+        scheduler = GPUScheduler(gpu_caches=[gpu_cache])
 
         # Select same model multiple times
         selections = []
@@ -113,8 +118,9 @@ class TestIntegrationComponentsWork:
             gpu_id, _ = scheduler.select_best_gpu("test-model")
             selections.append(gpu_id)
 
-        # Should select valid GPUs
+        # Should select valid GPUs (in this case, always GPU 0)
         assert all(gpu_id >= 0 for gpu_id in selections)
+        assert selections[0] == 0  # Only GPU 0 available
 
     def test_metrics_export_formats(self):
         """Test metrics can be exported in different formats"""
@@ -171,8 +177,8 @@ class TestIntegrationComponentsWork:
     def test_full_workflow_with_all_components(self):
         """Test a complete workflow using all components"""
         detector = GPUDetector()
-        scheduler = GPUScheduler()
         cache = GPUModelCache(gpu_id=0, total_memory_mb=24000, reserved_memory_mb=1000)
+        scheduler = GPUScheduler(gpu_caches=[cache])  # Pass GPU cache to scheduler
         predictor = AccessPatternPredictor()
         metrics = MetricsCollector(use_prometheus=False)
 
@@ -190,7 +196,7 @@ class TestIntegrationComponentsWork:
         assert gpu_id >= 0
 
         # 4. Load model to cache
-        loaded = cache.load_model(model_id="fraud-detection", model=None, size_mb=100)
+        loaded = cache.load_model(model_id="fraud-detection", memory_mb=100)
 
         # 5. Get model from cache
         if loaded:
@@ -224,20 +230,20 @@ class TestIntegrationMemoryManagement:
         assert can_allocate is True
 
         # Record allocation
-        allocated = memory_mgr.allocate(gpu_id=0, size_mb=5000, model_id="model-1")
+        allocated = memory_mgr.allocate(model_id="model-1", size_mb=5000)
         if allocated:
-            assert memory_mgr.allocated_memory_mb >= 5000
+            assert memory_mgr.used_memory_mb >= 5000
 
     def test_cache_respects_memory_limits(self):
         """Test cache respects GPU memory limits"""
         cache = GPUModelCache(gpu_id=0, total_memory_mb=5000, reserved_memory_mb=1000)
 
         # Try to load models that exceed memory
-        loaded1 = cache.load_model(model_id="model-1", model=None, size_mb=2000)
-        loaded2 = cache.load_model(model_id="model-2", model=None, size_mb=2000)
+        loaded1 = cache.load_model(model_id="model-1", memory_mb=2000)
+        loaded2 = cache.load_model(model_id="model-2", memory_mb=2000)
 
         stats = cache.get_stats()
-        assert stats['used_memory_mb'] <= 4000  # Should not exceed 5000-1000
+        assert stats['memory_used_mb'] <= 4000  # Should not exceed 5000-1000
 
 
 class TestIntegrationErrorRecovery:

@@ -260,7 +260,7 @@ class GPUScheduler:
         """Clean up after request completes"""
         self.clear_request(gpu_id)
 
-    
+    def select_best_gpu(self, model_id: str) -> Tuple[int, 'SchedulingScore']:
         """
         Select the best GPU for this model
 

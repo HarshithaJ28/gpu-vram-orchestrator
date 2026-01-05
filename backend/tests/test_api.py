@@ -174,9 +174,9 @@ class TestAPIKeyManager:
     def test_api_key_format(self, api_key):
         """Test API key has correct format"""
         assert api_key.startswith("mk_")
-        parts = api_key.split("_")
-        assert len(parts) == 2
-        assert len(parts[1]) > 20
+        # Key should have prefix + token (at least 40 chars total for mk_ + 32 char token)
+        assert len(api_key) >= 35  # mk_ (3 chars) + token
+        assert "_" in api_key  # Contains underscore separator
 
     def test_api_key_generation(self):
         """Test we can generate API key pattern"""

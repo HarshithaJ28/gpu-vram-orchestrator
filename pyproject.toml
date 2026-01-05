@@ -1,0 +1,174 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpu-vram-orchestrator"
+version = "1.0.0"
+description = "Intelligent GPU memory orchestration for multi-model inference environments"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Harshitha Sharma", email = "harshitha@example.com"}
+]
+keywords = [
+    "gpu",
+    "vram",
+    "orchestration",
+    "inference",
+    "machine-learning",
+    "pytorch",
+    "kubernetes"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch==2.1.0",
+    "torchvision==0.16.0",
+    "torchaudio==2.1.0",
+    "fastapi==0.104.1",
+    "uvicorn==0.24.0",
+    "pydantic==2.4.2",
+    "prometheus-client==0.18.0",
+    "pynvml==11.5.3",
+    "numpy==1.24.3",
+    "aiohttp==3.9.1",
+    "httpx==0.25.2",
+    "requests==2.31.0",
+    "python-dateutil==2.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==7.4.0",
+    "pytest-asyncio==0.21.1",
+    "pytest-cov==4.1.0",
+    "black==23.11.0",
+    "isort==5.13.2",
+    "flake8==6.1.0",
+    "mypy==1.7.1",
+    "pre-commit==3.5.0",
+]
+
+test = [
+    "pytest==7.4.0",
+    "pytest-asyncio==0.21.1",
+    "pytest-cov==4.1.0",
+]
+
+docs = [
+    "sphinx==7.2.6",
+    "sphinx-rtd-theme==2.0.0",
+]
+
+all = [
+    "gpu-vram-orchestrator[dev,test,docs]"
+]
+
+[project.urls]
+Homepage = "https://github.com/HarshithaJ28/gpu-vram-orchestrator"
+Documentation = "https://github.com/HarshithaJ28/gpu-vram-orchestrator#documentation"
+Repository = "https://github.com/HarshithaJ28/gpu-vram-orchestrator.git"
+Issues = "https://github.com/HarshithaJ28/gpu-vram-orchestrator/issues"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "backend"
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_mode = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip_gitignore = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--disable-warnings",
+]
+markers = [
+    "integration: integration tests",
+    "slow: slow tests",
+    "gpu: tests requiring GPU",
+]
+
+[tool.coverage.run]
+source = ["backend/src"]
+omit = [
+    "*/tests/*",
+    "*/site-packages/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "^\\s*\\.\\.\\.$",
+]
+precision = 2
+skip_empty = true
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "torchvision.*",
+    "torchaudio.*",
+    "pytest.*",
+    "pynvml.*",
+]
+ignore_missing_imports = true
