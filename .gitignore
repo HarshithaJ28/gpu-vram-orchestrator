@@ -57,11 +57,9 @@ htmlcov/
 logs/
 
 # Build and deployment
-BUILD.md
-docker-compose.yml
-Dockerfile
-
-# Node (if added later)
+build/
+dist/
+*.egg-info/
 node_modules/
 package-lock.json
 yarn.lock

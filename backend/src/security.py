@@ -71,14 +71,20 @@ class APIKeyManager:
             except Exception as e:
                 logger.error(f"Failed to load API keys from file: {e}")
         
-        # Generate default key if none exist (DEVELOPMENT ONLY)
+        # In production, require API keys to be explicitly configured
         if not self.valid_keys:
+            if os.getenv("ENVIRONMENT") == "production":
+                raise RuntimeError(
+                    "No API keys configured in production! "
+                    "Set API_KEY or API_KEY_FILE environment variables."
+                )
+            # Development mode: generate default key
             default_key = "dev-" + secrets.token_urlsafe(32)
             self.valid_keys.add(default_key)
             self.key_names[default_key] = "development"
             self.key_created[default_key] = datetime.now()
             logger.warning(
-                f"No API keys configured. Generated development key: {default_key[:20]}..."
+                f"DEV MODE: No API keys configured. Generated development key: {default_key[:20]}..."
             )
     
     def generate_key(self, name: str = "unnamed") -> str:

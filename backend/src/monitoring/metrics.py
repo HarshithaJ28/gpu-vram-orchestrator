@@ -56,6 +56,9 @@ class MetricsCollector:
         self.model_load_times = {}
         self.cost_gpu_hours = 0.0
         self.cost_savings = 0.0
+        self.gpu_temperature = {}
+        self.gpu_power = {}
+        self.gpu_memory = {}
 
         if self.use_prometheus:
             self._init_prometheus_metrics()
@@ -121,6 +124,23 @@ class MetricsCollector:
             self.prom_cost_savings = Gauge(
                 f'cost_savings_dollars_{self.instance_id}',
                 'Cost savings'
+            )
+
+            # GPU Hardware Monitoring
+            self.prom_gpu_temp = Gauge(
+                f'gpu_temperature_celsius_{self.instance_id}',
+                'GPU temperature in Celsius',
+                ['gpu_id']
+            )
+            self.prom_gpu_power = Gauge(
+                f'gpu_power_watts_{self.instance_id}',
+                'GPU power consumption in watts',
+                ['gpu_id']
+            )
+            self.prom_gpu_memory_mb = Gauge(
+                f'gpu_memory_used_mb_{self.instance_id}',
+                'GPU memory used in MB',
+                ['gpu_id']
             )
         except ValueError as e:
             # Metric already registered, fallback to memory mode
@@ -217,6 +237,36 @@ class MetricsCollector:
                 except Exception as e:
                     logger.warning(f"Failed to record Prometheus metric: {e}")
 
+    def record_gpu_temperature(self, gpu_id: int, temp_celsius: float):
+        """Record GPU temperature in Celsius"""
+        with self.lock:
+            self.gpu_temperature[gpu_id] = temp_celsius
+            if self.use_prometheus:
+                try:
+                    self.prom_gpu_temp.labels(gpu_id=gpu_id).set(temp_celsius)
+                except Exception as e:
+                    logger.warning(f"Failed to record GPU temperature: {e}")
+
+    def record_gpu_power(self, gpu_id: int, power_watts: float):
+        """Record GPU power consumption in watts"""
+        with self.lock:
+            self.gpu_power[gpu_id] = power_watts
+            if self.use_prometheus:
+                try:
+                    self.prom_gpu_power.labels(gpu_id=gpu_id).set(power_watts)
+                except Exception as e:
+                    logger.warning(f"Failed to record GPU power: {e}")
+
+    def record_gpu_memory(self, gpu_id: int, memory_mb: float):
+        """Record GPU memory usage in MB"""
+        with self.lock:
+            self.gpu_memory[gpu_id] = memory_mb
+            if self.use_prometheus:
+                try:
+                    self.prom_gpu_memory_mb.labels(gpu_id=gpu_id).set(memory_mb)
+                except Exception as e:
+                    logger.warning(f"Failed to record GPU memory: {e}")
+
     def get_cache_hit_rate(self) -> float:
         """Get cache hit rate (0-1)"""
         with self.lock:
@@ -237,6 +287,9 @@ class MetricsCollector:
             self.model_load_times.clear()
             self.cost_gpu_hours = 0.0
             self.cost_savings = 0.0
+            self.gpu_temperature.clear()
+            self.gpu_power.clear()
+            self.gpu_memory.clear()
 
     def export_metrics_text(self) -> str:
         """
@@ -274,4 +327,7 @@ class MetricsCollector:
                 'model_load_times': self.model_load_times.copy(),
                 'cost_gpu_hours': self.cost_gpu_hours,
                 'cost_savings': self.cost_savings,
+                'gpu_temperature': self.gpu_temperature.copy(),
+                'gpu_power': self.gpu_power.copy(),
+                'gpu_memory': self.gpu_memory.copy(),
             }
