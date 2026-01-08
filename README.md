@@ -10,7 +10,7 @@ Intelligent GPU memory orchestration for multi-model inference environments. Max
 
 - **🚀 Intelligent Scheduling**: Multi-factor GPU selection (memory, load, affinity)
 - **💾 Smart Caching**: LRU cache with model pinning to prevent eviction
-- **🔮 Predictive Loading**: Machine learning-based access pattern prediction
+- **🔮 Predictive Loading**: Statistical access pattern prediction
 - **📊 Observable**: Prometheus metrics, Grafana dashboards, performance benchmarks
 - **⚙️ Kubernetes Ready**: Full K8s manifests with HPA and pod disruption budgets
 - **🐳 Docker Support**: Production-ready Dockerfile and docker-compose stack

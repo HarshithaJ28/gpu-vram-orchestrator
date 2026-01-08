@@ -27,7 +27,9 @@ from src.security import (
     APIKeyManager, 
     RateLimiter,
     verify_api_key as security_verify_api_key,
-    check_rate_limit
+    check_rate_limit,
+    api_key_manager,
+    rate_limiter
 )
 
 # Configure logging
@@ -172,15 +174,9 @@ except Exception as e:
 # ============================================================================
 from fastapi import Depends
 
-# Initialize security managers
-api_key_manager = APIKeyManager()
-rate_limiter = RateLimiter(
-    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "100")),
-    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000"))
-)
-
+# Security managers are imported from src.security module
+# Note: APIKeyManager and RateLimiter are singletons, DO NOT instantiate here
 logger.info(f"✓ Security module initialized")
-logger.info(f"  Rate limits: {rate_limiter.requests_per_minute}/min, {rate_limiter.requests_per_hour}/hour")
 
 
 # ============================================================================
@@ -581,8 +577,12 @@ async def get_prediction_metrics():
 # ============================================================================
 
 @app.get("/health")
-async def health_check(api_key: str = Depends(security_verify_api_key)):
-    """Health check endpoint"""
+async def health_check():
+    """Health check endpoint - PUBLIC (no auth required)
+    
+    Docker containers need this endpoint without authentication to perform
+    health checks. Use /health/detailed for authenticated detailed status.
+    """
     total_models = sum(len(gpu.models) for gpu in _gpu_caches) if _gpu_caches else 0
     avg_util = (
         sum(gpu.get_stats()['utilization_pct'] for gpu in _gpu_caches) / len(_gpu_caches)

@@ -29,6 +29,9 @@ venv/
 ENV/
 env/
 .env
+.env.local
+.env.*.local
+*.env
 
 # IDE
 .vscode/
@@ -46,6 +49,7 @@ env/
 htmlcov/
 .tox/
 .hypothesis/
+.mypy_cache/
 
 # Database
 *.db
@@ -81,5 +85,25 @@ Thumbs.db
 # Project specific
 benchmarks/results/
 monitoring/prometheus/data/
+prometheus-data/
+grafana-data/
 *.tmp
 temp/
+
+# CRITICAL: Models and Secrets (prevent credential leaks)
+models/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.pickle
+.api_keys
+secrets/
+credentials.json
+*.key
+*.pem
+
+# Docker overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
