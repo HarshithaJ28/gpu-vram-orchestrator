@@ -39,7 +39,7 @@ jobs:
       run: |
         pip install flake8
         # Show all errors
-        flake8 src/ --count --statistics --show-source
+        flake8 backend/src/ --count --statistics --show-source
     
     - name: Run tests with coverage
       run: |
@@ -106,15 +106,15 @@ jobs:
     
     - name: Check code formatting with Black
       run: |
-        black src/ --check --diff
+        black backend/src/ --check --diff
     
     - name: Check import order with isort
       run: |
-        isort src/ --check-only --diff
+        isort backend/src/ --check-only --diff
     
     - name: Type checking with mypy
       run: |
-        mypy src/ --ignore-missing-imports --no-error-summary
+        mypy backend/src/ --ignore-missing-imports --no-error-summary
 
   security:
     runs-on: ubuntu-latest
