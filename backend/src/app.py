@@ -6,10 +6,8 @@ Production-grade GPU VRAM Orchestrator API
 import logging
 import time
 import traceback
-import os
 from typing import Dict, Any, List, Optional
-from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -19,17 +17,14 @@ from src.config import config
 from src.gpu import GPUDetector
 from src.cache.gpu_cache import GPUModelCache
 from src.scheduler.gpu_scheduler import GPUScheduler
-from src.inference.engine import InferenceEngine, InferenceResult
+from src.inference.engine import InferenceEngine
 from src.registry import ModelRegistry
 from src.predictor import ModelAccessPredictor, ModelPreloader
 from src.monitoring.metrics import MetricsCollector
 from src.security import (
-    APIKeyManager, 
-    RateLimiter,
     verify_api_key as security_verify_api_key,
     check_rate_limit,
-    api_key_manager,
-    rate_limiter
+    api_key_manager
 )
 
 # Configure logging
@@ -176,7 +171,7 @@ from fastapi import Depends
 
 # Security managers are imported from src.security module
 # Note: APIKeyManager and RateLimiter are singletons, DO NOT instantiate here
-logger.info(f"✓ Security module initialized")
+logger.info("✓ Security module initialized")
 
 
 # ============================================================================
@@ -366,7 +361,7 @@ async def predict_batch(
                 loaded_model = gpu_cache.get_model(request.model_id)
 
             # Batch inference
-            predictions = _inference_engine.predict_batch(
+            predictions = await _inference_engine.predict_batch(
                 model=loaded_model.model,
                 batch_data=request.batch_data,
                 model_id=request.model_id,
@@ -552,15 +547,6 @@ async def get_models_stats():
         models_by_gpu[f"gpu_{gpu_cache.gpu_id}"] = stats['models']
 
     return models_by_gpu
-
-
-@app.get("/registry/models")
-async def list_registered_models():
-    """List all registered models"""
-    if not _model_registry:
-        raise HTTPException(500, "Registry not initialized")
-
-    return _model_registry.list_models()
 
 
 @app.get("/metrics/predictions")
@@ -1009,27 +995,52 @@ async def reset_preloader_stats(admin_key: str = Depends(security_verify_api_key
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
+    """Root endpoint with service information"""
     return {
         'service': 'ModelMesh',
         'version': '1.0.0',
-        'description': 'Multi-model GPU serving with intelligent caching + predictive preloading',
+        'description': 'Multi-model GPU serving with intelligent caching',
         'docs': '/docs',
         'features': {
-            'week1': ['GPU caching', 'Smart scheduling', 'LRU eviction', 'Batch inference'],
-            'week2': ['Model registry', 'ML predictive loading', 'Background preloader'],
-            'week3': ['API key management', 'Rate limiting', 'Security authentication']
+            'core': [
+                'Multi-GPU memory management',
+                'LRU cache with automatic eviction',
+                'Multi-factor intelligent routing',
+                'Statistical access pattern prediction',
+                'Predictive model preloading',
+                'Thread-safe concurrent operations'
+            ],
+            'api': [
+                'RESTful prediction endpoint',
+                'Batch inference support',
+                'Model registry management',
+                'Real-time metrics and stats'
+            ],
+            'security': [
+                'API key authentication',
+                'Rate limiting (100/min, 1000/hour)',
+                'Request timeout handling'
+            ],
+            'monitoring': [
+                'Prometheus metrics integration',
+                'Grafana dashboards',
+                'GPU utilization tracking',
+                'Cache performance analytics'
+            ],
+            'deployment': [
+                'Docker containerization',
+                'Kubernetes support',
+                'Multi-GPU orchestration'
+            ]
         },
         'endpoints': {
-            'prediction': '/predict (POST)',
-            'batch_prediction': '/predict/batch (POST)',
-            'registry': '/registry/models (GET|POST|DELETE)',
-            'admin': '/admin/keys/* (POST|GET)',
-            'predictor': '/predictor/predictions (GET)',
-            'preloader': '/preloader/stats (GET)',
-            'health': '/health (GET)',
-            'docs': '/docs (GET)'
-        }
+            'documentation': '/docs',
+            'health': '/health',
+            'metrics': '/metrics',
+            'predict': '/predict',
+            'registry': '/registry/models'
+        },
+        'repository': 'https://github.com/HarshithaJ28/gpu-vram-orchestrator'
     }
 
 

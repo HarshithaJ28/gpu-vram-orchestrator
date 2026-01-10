@@ -6,7 +6,7 @@ Handles model inference with preprocessing, postprocessing, and GPU management.
 import torch
 import logging
 import numpy as np
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Callable
 from dataclasses import dataclass
 import asyncio
 
@@ -149,7 +149,7 @@ class InferenceEngine:
             logger.error(f"Inference failed for {model_id}: {e}", exc_info=True)
             raise
 
-    def predict_batch(
+    async def predict_batch(
         self,
         model: torch.nn.Module,
         batch_data: List[Dict[str, Any]],
@@ -158,7 +158,7 @@ class InferenceEngine:
         batch_size: int = 32
     ) -> List[Any]:
         """
-        Batch inference for multiple inputs
+        Batch inference for multiple inputs (async)
 
         More efficient than calling predict() multiple times because:
         - Single GPU transfer
@@ -195,12 +195,15 @@ class InferenceEngine:
                     # If tensors have different shapes, stack dimension 0
                     batch_tensor = torch.stack(batch_tensors)
 
-                # Run batch inference
-                with torch.no_grad():
-                    if torch.cuda.is_available():
-                        batch_tensor = batch_tensor.to(f'cuda:{gpu_id}')
-
-                    batch_output = model(batch_tensor)
+                # Run batch inference in async context
+                loop = asyncio.get_event_loop()
+                batch_output = await loop.run_in_executor(
+                    None,
+                    self._run_batch_inference,
+                    model,
+                    batch_tensor,
+                    gpu_id
+                )
 
                 # Postprocess each output
                 for j in range(len(chunk)):
@@ -213,12 +216,37 @@ class InferenceEngine:
                     prediction = self._postprocess(output, model_id)
                     predictions.append(prediction)
 
-            logger.debug(f"Batch inference for {model_id} completed ({len(batch_data)} items)")
+            logger.debug(
+                f"Batch inference for {model_id} "
+                f"completed ({len(batch_data)} items)"
+            )
             return predictions
 
         except Exception as e:
-            logger.error(f"Batch inference failed for {model_id}: {e}", exc_info=True)
+            logger.error(
+                f"Batch inference failed for {model_id}: {e}",
+                exc_info=True
+            )
             raise
+
+    def _run_batch_inference(
+        self,
+        model: torch.nn.Module,
+        batch_tensor: torch.Tensor,
+        gpu_id: int
+    ) -> torch.Tensor:
+        """
+        Synchronous batch inference (runs in executor)
+        
+        Separated to run in thread pool without blocking event loop.
+        """
+        with torch.no_grad():
+            if torch.cuda.is_available():
+                batch_tensor = batch_tensor.to(f'cuda:{gpu_id}')
+
+            batch_output = model(batch_tensor)
+
+        return batch_output
 
     def _preprocess(
         self,

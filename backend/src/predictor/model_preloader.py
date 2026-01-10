@@ -7,7 +7,6 @@ to reduce cold start latency.
 import asyncio
 import logging
 from typing import Optional, TYPE_CHECKING
-from datetime import datetime
 
 if TYPE_CHECKING:
     from .model_access_predictor import ModelAccessPredictor

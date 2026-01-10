@@ -10,7 +10,7 @@ Measures performance against targets:
 """
 
 import time
-from typing import Dict, List
+from typing import Dict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -98,8 +98,7 @@ class BenchmarkSuite:
         """
         logger.info(f"Benchmarking cache hit rate ({num_requests} requests)...")
 
-        # Access pattern: 70% popular models, 30% random
-        popular_models = ["fraud-v1", "recommendation-core", "image-classifier"]
+        # Cache statistics from GPU caches
         total_hits = sum(cache.cache_hits for cache in self.gpu_caches)
         total_misses = sum(cache.cache_misses for cache in self.gpu_caches)
         total_requests = total_hits + total_misses
@@ -135,7 +134,7 @@ class BenchmarkSuite:
             start = time.time()
             try:
                 self.scheduler.select_best_gpu(f"model-{i % 10}")
-            except:
+            except Exception:
                 pass
             elapsed_ms = (time.time() - start) * 1000
             times.append(elapsed_ms)

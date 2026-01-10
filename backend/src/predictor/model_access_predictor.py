@@ -22,7 +22,7 @@ This approach trades 15% accuracy for:
 import logging
 import numpy as np
 from collections import defaultdict, deque
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 

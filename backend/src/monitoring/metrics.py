@@ -4,7 +4,7 @@ Exports metrics for monitoring GPU orchestrator performance.
 Includes cache, GPU, scheduler, and latency metrics.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict
 import logging
 from threading import RLock
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import prometheus_client, but make it optional
 try:
-    from prometheus_client import Counter, Gauge, Histogram, CollectorRegistry, generate_latest, REGISTRY
+    from prometheus_client import Counter, Gauge, Histogram, generate_latest
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False

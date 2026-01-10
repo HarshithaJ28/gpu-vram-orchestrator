@@ -158,16 +158,39 @@ print(f"Cache hits: {metrics['cache_hits']}")
 print(f"GPU utilization: {metrics['gpu_utilization']}")
 ```
 
-## Performance Targets
+## Performance
 
-| Metric | Target | Actual |
-|--------|--------|--------|
-| Cold start latency | < 3s | ~2.5s |
-| Cache hit rate | > 75% | ~82% |
-| Scheduler speed | < 1ms | ~0.45ms |
-| GPU utilization | > 70% | ~75% |
-| Prediction accuracy | > 70% | ~78% |
-| Cost reduction | > 75% | ~80% |
+### CPU Benchmark Results (Measured)
+
+Hardware: Intel i7-10700K, 32GB RAM (no GPU)
+Model: DistilBERT-base-uncased
+
+| Metric | Measured Value | Notes |
+|--------|----------------|-------|
+| **Throughput** | 12.3 req/s | CPU-limited (no GPU) |
+| **P95 Latency (cached)** | 142ms | Cached inference path |
+| **Cold Start Latency** | 2,341ms | Initial model load to CPU |
+| **Warm Cache Latency** | 81ms | Model already loaded |
+| **Cache Hit Rate** | 94% | Zipf distribution workload |
+| **Speedup (cached vs cold)** | 28.9× | 2341ms / 81ms |
+
+> ⚠️ **Note**: These are CPU measurements. See [BENCHMARKS.md](BENCHMARKS.md) for GPU projections and detailed methodology.
+
+### GPU Performance (Projected)
+
+Based on algorithmic analysis + NVIDIA A100 specifications:
+
+| Metric | Projected (2× A100) | Basis |
+|--------|---------------------|-------|
+| **Throughput** | 200-300 req/s | Algorithm analysis + GPU specs |
+| **P95 Latency (cached)** | 40-60ms | Routing (0.3ms) + inference (2-3ms) + network overhead |
+| **Cold Start Latency** | 100-150ms | Model load from disk to GPU |
+| **Cache Hit Rate** | 90-95% | Expected with Zipf workload |
+| **GPU Cost Savings** | 80-85% | 100 models on 15-20 GPUs vs 100 GPUs |
+
+> ⚠️ **Validation Required**: Deploy to cloud GPU instance for actual measurements.
+
+See [benchmarks/](benchmarks/) for reproducible test scripts and [BENCHMARKS.md](BENCHMARKS.md) for complete analysis.
 
 ## Testing
 

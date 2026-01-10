@@ -5,8 +5,8 @@ Simple client for interacting with the GPU VRAM Orchestrator API.
 
 import requests
 import logging
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+import aiohttp
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ Manages GPU memory allocation and deallocation.
 import torch
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict
 from datetime import datetime
 import logging
 
