@@ -1,6 +1,6 @@
 """Model Access Pattern Predictor
 
-⚠️ NOT Machine Learning - This is statistical frequency analysis.
+NOT Machine Learning - This is statistical frequency analysis.
 
 This module uses weighted histogram frequency analysis to predict which models
 will be accessed based on historical patterns. It does NOT use neural networks,
@@ -41,7 +41,7 @@ class AccessEvent:
 
 class ModelAccessPredictor:
     """
-    ⚠️ Statistical predictor for model access patterns (NOT machine learning).
+    Statistical predictor for model access patterns (NOT machine learning).
     
     Uses three weighted frequency histograms to predict model access:
     

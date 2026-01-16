@@ -87,7 +87,7 @@ class ModelPreloader:
         
         self.running = True
         self.task = asyncio.create_task(self._run_loop())
-        logger.info("✓ Preloader started")
+        logger.info("Preloader started")
     
     async def stop(self):
         """Stop background preloading task"""
@@ -102,7 +102,7 @@ class ModelPreloader:
             except asyncio.CancelledError:
                 pass
         
-        logger.info("✓ Preloader stopped")
+        logger.info("Preloader stopped")
     
     async def _run_loop(self):
         """Main preloading loop"""
@@ -170,12 +170,12 @@ class ModelPreloader:
                 preloaded += 1
                 self.preload_successes += 1
                 logger.info(
-                    f"  ✓ Pre-loaded {model_id} "
+                    f"  Pre-loaded {model_id} "
                     f"(confidence={probability:.1%})"
                 )
             else:
                 self.preload_failures += 1
-                logger.warning(f"  ✗ Failed to preload {model_id}")
+                logger.warning(f"  Failed to preload {model_id}")
     
     async def _preload_model(self, model_id: str, probability: float) -> bool:
         """

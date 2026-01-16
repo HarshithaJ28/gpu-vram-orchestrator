@@ -3,6 +3,6 @@
 from .gpu_scheduler import GPUScheduler, SchedulingScore
 
 __all__ = [
-    'GPUScheduler',
-    'SchedulingScore',
+    "GPUScheduler",
+    "SchedulingScore",
 ]

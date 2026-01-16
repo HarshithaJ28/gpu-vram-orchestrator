@@ -33,7 +33,7 @@ class GPUDetector:
             logger.info("PYNVML initialized successfully")
         except Exception as e:
             self.pynvml_available = False
-            logger.warning(f"⚠️  PYNVML not available, using PyTorch only. Error: {e}")
+            logger.warning(f"PYNVML not available, using PyTorch only. Error: {e}")
 
     def detect_gpus(self) -> List[GPUInfo]:
         """

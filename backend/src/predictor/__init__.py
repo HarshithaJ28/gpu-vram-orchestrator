@@ -8,8 +8,8 @@ from .access_predictor import AccessPatternPredictor
 from .preloader import PredictivePreloader
 
 __all__ = [
-    'ModelAccessPredictor',
-    'ModelPreloader',
-    'AccessPatternPredictor',
-    'PredictivePreloader',
+    "ModelAccessPredictor",
+    "ModelPreloader",
+    "AccessPatternPredictor",
+    "PredictivePreloader",
 ]

@@ -70,7 +70,7 @@ receivers:
   - name: 'warnings'
     slack_configs:
       - channel: '#gpu-orchestrator-warnings'
-        title: '⚠️ Warning: GPU Orchestrator'
+        title: 'Warning: GPU Orchestrator'
         text: '{{ .GroupLabels.alertname }}\n{{ .CommonAnnotations.summary }}'
         api_url: ${SLACK_WEBHOOK_URL}
         send_resolved: true

@@ -16,14 +16,14 @@ def main():
     
     try:
         status = client.status()
-        print(f"✓ System is healthy")
+        print(f"System is healthy")
         print(f"  GPUs: {status['gpus']['count']}")
         print(f"  Total Memory: {status['gpus']['total_memory_mb']} MB")
         print(f"  Available Memory: {status['memory']['available_mb']} MB")
         print(f"  Cache Size: {status['cache']['size_mb']} MB")
         print(f"  Cache Hit Rate: {status['cache']['hit_rate']:.2%}")
     except Exception as e:
-        print(f"✗ Error fetching status: {e}")
+        print(f"Error fetching status: {e}")
         return
 
     # Example 2: Run a simple prediction
@@ -41,7 +41,7 @@ def main():
             return_timing=True
         )
         
-        print(f"✓ Prediction successful")
+        print(f"Prediction successful")
         print(f"  Model: fraud-detection-v1")
         print(f"  GPU ID: {result['gpu_id']}")
         print(f"  Prediction: {result['predictions']}")
@@ -53,7 +53,7 @@ def main():
         print(f"    Total: {result['timing_ms']['total']:.2f}ms")
         
     except Exception as e:
-        print(f"✗ Prediction failed: {e}")
+        print(f"Prediction failed: {e}")
 
     # Example 3: Multiple predictions to see caching in action
     print("\n" + "=" * 60)
@@ -72,7 +72,7 @@ def main():
             timings.append(timing)
             print(f"  Request {i+1}: {timing:.2f}ms")
         except Exception as e:
-            print(f"✗ Request {i+1} failed: {e}")
+            print(f"Request {i+1} failed: {e}")
     
     if timings:
         print(f"\n  Average: {sum(timings)/len(timings):.2f}ms")
@@ -87,14 +87,14 @@ def main():
     
     try:
         stats = client.get_stats(stat_type="cache")
-        print(f"✓ Cache stats retrieved")
+        print(f"Cache stats retrieved")
         print(f"  Total hits: {stats.get('hits', 0)}")
         print(f"  Total misses: {stats.get('misses', 0)}")
         print(f"  Evictions: {stats.get('evictions', 0)}")
         ratio = stats.get('hits', 0) / (stats.get('hits', 0) + stats.get('misses', 1))
         print(f"  Hit rate: {ratio:.2%}")
     except Exception as e:
-        print(f"✗ Error fetching cache stats: {e}")
+        print(f"Error fetching cache stats: {e}")
 
     # Example 5: Get metrics in Prometheus format
     print("\n" + "=" * 60)
@@ -103,14 +103,14 @@ def main():
     
     try:
         metrics = client.metrics(format='json')
-        print(f"✓ Metrics retrieved:")
+        print(f"Metrics retrieved:")
         print(f"  Cache hits: {metrics.get('cache_hits', 0)}")
         print(f"  Cache misses: {metrics.get('cache_misses', 0)}")
         print(f"  Models loaded: {metrics.get('models_loaded', 0)}")
         print(f"  GPU utilization: {metrics.get('gpu_utilization', 0):.1f}%")
         print(f"  Avg latency: {metrics.get('avg_latency_ms', 0):.2f}ms")
     except Exception as e:
-        print(f"✗ Error fetching metrics: {e}")
+        print(f"Error fetching metrics: {e}")
 
 
 if __name__ == "__main__":

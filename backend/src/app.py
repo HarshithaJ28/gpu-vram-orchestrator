@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     global _predictor, _preloader
 
     logger.info("=" * 80)
-    logger.info("🚀 GPU VRAM Orchestrator (ModelMesh) Starting...")
+    logger.info("GPU VRAM Orchestrator (ModelMesh) Starting...")
     logger.info("=" * 80)
 
     try:
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
         gpus = _gpu_detector.detect_gpus()
 
         if config.GPU_ENABLED and gpus:
-            logger.info(f"✓ Detected {len(gpus)} GPU(s)")
+            logger.info(f"Detected {len(gpus)} GPU(s)")
             for gpu in gpus:
                 logger.info(f"  GPU {gpu.gpu_id}: {gpu.name} ({gpu.total_memory_mb}MB)")
 
@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
             _scheduler = GPUScheduler(_gpu_caches)
 
         else:
-            logger.warning("⚠️  GPU_ENABLED but no GPUs detected or GPU disabled")
+            logger.warning("GPU_ENABLED but no GPUs detected or GPU disabled")
             if config.GPU_ENABLED:
                 logger.info("Running in CPU-only mode")
 
@@ -91,16 +91,16 @@ async def lifespan(app: FastAPI):
         _model_registry = ModelRegistry(storage_path=config.MODELS_DIR)
         _metrics = MetricsCollector(use_prometheus=True)
 
-        logger.info("✓ Inference engine initialized")
-        logger.info("✓ Model registry initialized")
-        logger.info("✓ Metrics collector initialized")
+        logger.info("Inference engine initialized")
+        logger.info("Model registry initialized")
+        logger.info("Metrics collector initialized")
 
         # Initialize ML-based predictor
         _predictor = ModelAccessPredictor(
             history_window_hours=24,
             min_observations=5
         )
-        logger.info("✓ Access pattern predictor initialized")
+        logger.info("Access pattern predictor initialized")
 
         # Initialize and start preloader
         _preloader = ModelPreloader(
@@ -112,14 +112,14 @@ async def lifespan(app: FastAPI):
             max_preloads_per_cycle=3
         )
         await _preloader.start()
-        logger.info("✓ Model preloader started (cycle=60s, confidence=0.5)")
+        logger.info("Model preloader started (cycle=60s, confidence=0.5)")
 
         logger.info("=" * 80)
-        logger.info("✓ ModelMesh Ready with Predictive Loading!")
+        logger.info("ModelMesh Ready with Predictive Loading!")
         logger.info("=" * 80)
 
     except Exception as e:
-        logger.error(f"✗ Startup failed: {e}", exc_info=True)
+        logger.error(f"Startup failed: {e}", exc_info=True)
         raise
 
     yield  # ← Application runs here
@@ -130,12 +130,12 @@ async def lifespan(app: FastAPI):
         # Stop preloader first
         if _preloader:
             await _preloader.stop()
-            logger.info("✓ Preloader stopped")
+            logger.info("Preloader stopped")
         
         # Clean up GPU memory
         for gpu_cache in _gpu_caches:
             gpu_cache.clear()
-        logger.info("✓ Cleaned up GPU memory")
+        logger.info("Cleaned up GPU memory")
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
 
@@ -159,9 +159,9 @@ from prometheus_client import make_asgi_app
 try:
     metrics_app = make_asgi_app()
     app.mount("/prometheus", metrics_app)
-    logger.info("✓ Prometheus metrics mounted at /prometheus")
+    logger.info("Prometheus metrics mounted at /prometheus")
 except Exception as e:
-    logger.warning(f"⚠️  Failed to mount Prometheus: {e}")
+    logger.warning(f"Failed to mount Prometheus: {e}")
 
 
 # ============================================================================
@@ -171,7 +171,7 @@ from fastapi import Depends
 
 # Security managers are imported from src.security module
 # Note: APIKeyManager and RateLimiter are singletons, DO NOT instantiate here
-logger.info("✓ Security module initialized")
+logger.info("Security module initialized")
 
 
 # ============================================================================

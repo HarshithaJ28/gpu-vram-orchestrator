@@ -1,6 +1,6 @@
 # Performance Benchmarks
 
-> ⚠️ **IMPORTANT DISCLAIMER**
+> **IMPORTANT DISCLAIMER**
 > 
 > These benchmarks contain a mix of **real measurements** (CPU-based testing) 
 > and **algorithmic projections** (GPU performance estimates). 
@@ -13,19 +13,19 @@
 
 ## Measurement Methodology
 
-### What We Actually Measured ✅
+### What We Actually Measured
 
-1. ✅ CPU-based inference with DistilBERT (real PyTorch model)
-2. ✅ Cache hit rates (simulated workload following Zipf distribution)
-3. ✅ Routing overhead (<1ms measured via timestamps)
-4. ✅ Memory management correctness (eviction behavior verified)
-5. ✅ API response times (without GPU involved)
+1. CPU-based inference with DistilBERT (real PyTorch model)
+2. Cache hit rates (simulated workload following Zipf distribution)
+3. Routing overhead (<1ms measured via timestamps)
+4. Memory management correctness (eviction behavior verified)
+5. API response times (without GPU involved)
 
-### What We Projected ⚠️
+### What We Projected
 
-1. ⚠️ GPU throughput - Estimated from NVIDIA specs + HuggingFace benchmarks
-2. ⚠️ Multi-GPU scaling - Assumed linear scaling (optimistic)
-3. ⚠️ Production latencies - Based on similar systems analysis
+1. GPU throughput - Estimated from NVIDIA specs + HuggingFace benchmarks
+2. Multi-GPU scaling - Assumed linear scaling (optimistic)
+3. Production latencies - Based on similar systems analysis
 
 ---
 
@@ -56,16 +56,16 @@
 ```
 
 **Key Findings**:
-- ✅ Cache hit rate: **94%** (real measurement on CPU)
-- ✅ Routing overhead: **<1ms** (sub-millisecond decisions)
-- ✅ Cold start penalty: **~29x slower** than cached (2.3s vs 81ms)
-- ✅ LRU eviction: **<0.5ms** per eviction
+- Cache hit rate: **94%** (real measurement on CPU)
+- Routing overhead: **<1ms** (sub-millisecond decisions)
+- Cold start penalty: **~29x slower** than cached (2.3s vs 81ms)
+- LRU eviction: **<0.5ms** per eviction
 
 ---
 
 ## Projected GPU Performance (Estimated)
 
-> ⚠️ These are **estimates from published specs**, not measured data
+> These are **estimates from published specs**, not measured data
 
 ### Assumptions
 - Hardware: 2× NVIDIA A100 (40GB each)
@@ -122,11 +122,11 @@ Payback period: 0.11 months (~3 days)
 
 ## Known Limitations
 
-1. ❌ **No real GPU testing** - No A100 access during development
-2. ❌ **Synthetic workload** - Real production traffic may differ
-3. ❌ **Single model** - Projections assume DistilBERT, other models differ
-4. ❌ **No soak testing** - Measured over 8 seconds, not 24 hours
-5. ❌ **No failure scenarios** - No chaos engineering tested
+1. **No real GPU testing** - No A100 access during development
+2. **Synthetic workload** - Real production traffic may differ
+3. **Single model** - Projections assume DistilBERT, other models differ
+4. **No soak testing** - Measured over 8 seconds, not 24 hours
+5. **No failure scenarios** - No chaos engineering tested
 
 ---
 

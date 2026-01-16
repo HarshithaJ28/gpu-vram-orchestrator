@@ -73,7 +73,7 @@ class BatchProcessor:
                     gpu_distribution[gpu_id] = gpu_distribution.get(gpu_id, 0) + 1
                     
                 except Exception as e:
-                    print(f"    ✗ Error processing item {item_idx}: {e}")
+                    print(f"    Error processing item {item_idx}: {e}")
                     all_results.append({
                         "index": i + item_idx,
                         "error": str(e)
@@ -81,7 +81,7 @@ class BatchProcessor:
             
             batch_time = time.time() - batch_start
             batch_throughput = len(batch) / batch_time
-            print(f"    ✓ Batch {batch_num} completed in {batch_time:.2f}s ({batch_throughput:.1f} items/s)")
+            print(f"    Batch {batch_num} completed in {batch_time:.2f}s ({batch_throughput:.1f} items/s)")
         
         total_time = time.time() - start_time
         
@@ -156,7 +156,7 @@ def main():
     print("\n" + "=" * 70)
     print("BATCH PROCESSING SUMMARY")
     print("=" * 70)
-    print(f"✓ Model: {summary['model_id']}")
+    print(f"Model: {summary['model_id']}")
     print(f"  Total items: {summary['total_items']}")
     print(f"  Successful: {summary['successful']}")
     print(f"  Failed: {summary['failed']}")

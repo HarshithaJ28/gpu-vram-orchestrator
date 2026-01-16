@@ -77,7 +77,7 @@ python -m pytest tests/ -v --tb=short
 We follow PEP 8 with some project-specific conventions:
 
 ```python
-# ✓ Good
+# Good
 def calculate_scheduler_score(
     memory_available: float,
     current_load: float,
@@ -95,7 +95,7 @@ def calculate_scheduler_score(
         affinity_score * weights['affinity']
     )
 
-# ✗ Bad
+# Bad
 def calc_score(mem,load,aff):
     return mem*0.5 + (1-load)*0.3 + aff*0.2
 ```

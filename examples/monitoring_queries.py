@@ -65,7 +65,7 @@ def main():
     try:
         # Prometheus query
         result = prometheus.query("rate(gpu_cache_hits_total[5m])")
-        print(f"✓ Cache hits per second: {result}")
+        print(f"Cache hits per second: {result}")
         
         # Also get via REST API
         stats = api_client.get_stats(stat_type="cache")
@@ -78,7 +78,7 @@ def main():
             print(f"  Total misses: {total_misses}")
             print(f"  Hit rate: {hit_rate:.2%}")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 2: GPU Utilization
     print("\n" + "=" * 70)
@@ -88,7 +88,7 @@ def main():
     try:
         # Get current utilization
         status = api_client.status()
-        print(f"✓ GPU Status:")
+        print(f"GPU Status:")
         print(f"  Total GPUs: {status['gpus']['count']}")
         print(f"  Total memory: {status['gpus']['total_memory_mb']} MB")
         print(f"  Available: {status['memory']['available_mb']} MB")
@@ -103,13 +103,13 @@ def main():
             
             # Alert thresholds
             if utilization > 90:
-                print(f"  ⚠ CRITICAL: GPU utilization >90%")
+                print(f"  CRITICAL: GPU utilization >90%")
             elif utilization > 80:
-                print(f"  ⚠ WARNING: GPU utilization >80%")
+                print(f"  WARNING: GPU utilization >80%")
             else:
-                print(f"  ✓ GPU utilization is healthy")
+                print(f"  GPU utilization is healthy")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 3: Scheduler Performance
     print("\n" + "=" * 70)
@@ -131,17 +131,17 @@ def main():
         avg_time = sum(timings) / len(timings)
         max_time = max(timings)
         
-        print(f"✓ Scheduler Performance:")
+        print(f"Scheduler Performance:")
         print(f"  Avg time: {avg_time:.2f}ms")
         print(f"  Max time: {max_time:.2f}ms")
         print(f"  Threshold (SLA): < 1ms")
         
         if avg_time > 1.0:
-            print(f"  ⚠ WARNING: Scheduler exceeding SLA")
+            print(f"  WARNING: Scheduler exceeding SLA")
         else:
-            print(f"  ✓ Scheduler performance is good")
+            print(f"  Scheduler performance is good")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 4: Inference Latency Percentiles
     print("\n" + "=" * 70)
@@ -164,7 +164,7 @@ def main():
         # Calculate percentiles
         sorted_latencies = sorted(latencies)
         
-        print(f"✓ Latency Distribution (ms):")
+        print(f"Latency Distribution (ms):")
         print(f"  Min: {sorted_latencies[0]:.2f}")
         print(f"  P10: {sorted_latencies[len(sorted_latencies)//10]:.2f}")
         print(f"  P25: {sorted_latencies[len(sorted_latencies)//4]:.2f}")
@@ -178,11 +178,11 @@ def main():
         # SLA check
         p99 = sorted_latencies[int(len(sorted_latencies)*0.99)]
         if p99 > 200:
-            print(f"\n  ⚠ WARNING: P99 latency exceeds 200ms SLA")
+            print(f"\n  WARNING: P99 latency exceeds 200ms SLA")
         else:
-            print(f"\n  ✓ Latency SLA met")
+            print(f"\n  Latency SLA met")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 5: Model Hot Spots
     print("\n" + "=" * 70)
@@ -191,7 +191,7 @@ def main():
     
     try:
         models = api_client.list_models()
-        print(f"✓ Model access counts:")
+        print(f"Model access counts:")
         
         # Sort by access count
         sorted_models = sorted(
@@ -209,7 +209,7 @@ def main():
         
         print(f"\n  → Strategy: Pin top models to avoid evictions")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 6: Memory Pressure
     print("\n" + "=" * 70)
@@ -227,21 +227,21 @@ def main():
         if size_mb > 0:
             pressure = (used_mb / size_mb) * 100
             
-            print(f"✓ Cache Memory Pressure:")
+            print(f"Cache Memory Pressure:")
             print(f"  Total cache: {size_mb} MB")
             print(f"  Used: {used_mb} MB ({pressure:.1f}%)")
             print(f"  Available: {available_mb} MB")
             
             if pressure > 95:
-                print(f"  ⚠ CRITICAL: Cache nearly full")
+                print(f"  CRITICAL: Cache nearly full")
                 print(f"    Action: Reduce cache size or add GPUs")
             elif pressure > 85:
-                print(f"  ⚠ WARNING: High memory pressure")
+                print(f"  WARNING: High memory pressure")
                 print(f"    Action: Monitor eviction rate")
             else:
-                print(f"  ✓ Memory pressure is healthy")
+                print(f"  Memory pressure is healthy")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 7: Error Rate Monitoring
     print("\n" + "=" * 70)
@@ -264,18 +264,18 @@ def main():
         
         error_rate = (error_count / total_requests) * 100
         
-        print(f"✓ Error Rate:")
+        print(f"Error Rate:")
         print(f"  Requests: {total_requests}")
         print(f"  Errors: {error_count}")
         print(f"  Error rate: {error_rate:.2f}%")
         print(f"  SLA threshold: < 1% error rate")
         
         if error_rate > 1:
-            print(f"  ⚠ WARNING: Error rate exceeds SLA")
+            print(f"  WARNING: Error rate exceeds SLA")
         else:
-            print(f"  ✓ Error rate is within SLA")
+            print(f"  Error rate is within SLA")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     
     # Example 8: Alert Rules Summary
     print("\n" + "=" * 70)
@@ -321,7 +321,7 @@ def main():
         }
     ]
     
-    print("✓ Configured Alert Rules:\n")
+    print("Configured Alert Rules:\n")
     for rule in alert_rules:
         print(f"  • {rule['name']}")
         print(f"    Condition: {rule['condition']}")

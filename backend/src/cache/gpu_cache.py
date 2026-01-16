@@ -12,6 +12,7 @@ from typing import Any, Optional, Dict, Tuple
 import logging
 import os
 import torch
+from src.simple_classifier import SimpleClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -195,12 +196,18 @@ class GPUModelCache:
                 if model is None and model_path:
                     # Load from file
                     if torch.cuda.is_available():
-                        model = torch.load(
+                        # Load state dict and instantiate model
+                        model = SimpleClassifier()
+                        state_dict = torch.load(
                             model_path,
-                            map_location=f'cuda:{self.gpu_id}'
+                            map_location=f'cuda:{self.gpu_id}',
+                            weights_only=True
                         )
+                        model.load_state_dict(state_dict)
                     else:
-                        model = torch.load(model_path, map_location='cpu')
+                        model = SimpleClassifier()
+                        state_dict = torch.load(model_path, map_location='cpu', weights_only=True)
+                        model.load_state_dict(state_dict)
                         logger.warning(f"CUDA not available, loaded {model_id} on CPU")
 
                 if model is not None:
@@ -228,13 +235,13 @@ class GPUModelCache:
                 self.used_memory_mb += memory_mb
 
                 logger.info(
-                    f"✓ Loaded {model_id} on GPU {self.gpu_id}: "
+                    f"Loaded {model_id} on GPU {self.gpu_id}: "
                     f"{memory_mb}MB ({(self.used_memory_mb/self.available_memory_mb)*100:.1f}% util)"
                 )
                 return True
 
             except Exception as e:
-                logger.error(f"✗ Failed to load {model_id}: {e}", exc_info=True)
+                logger.error(f"Failed to load {model_id}: {e}", exc_info=True)
                 self.failed_loads += 1
                 return False
     

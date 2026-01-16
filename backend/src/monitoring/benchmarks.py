@@ -298,7 +298,7 @@ class BenchmarkSuite:
         logger.info("=" * 80)
 
         for name, result in self.results.items():
-            status = "✅ PASS" if result.get('passed', False) else "❌ FAIL"
+            status = "PASS" if result.get('passed', False) else "FAIL"
             logger.info(f"{status} - {name}")
 
         return summary
