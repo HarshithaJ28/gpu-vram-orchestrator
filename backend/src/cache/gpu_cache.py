@@ -12,7 +12,6 @@ from typing import Any, Optional, Dict, Tuple
 import logging
 import os
 import torch
-from src.simple_classifier import SimpleClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -196,18 +195,15 @@ class GPUModelCache:
                 if model is None and model_path:
                     # Load from file
                     if torch.cuda.is_available():
-                        # Load state dict and instantiate model
-                        model = SimpleClassifier()
-                        state_dict = torch.load(
+                        model = torch.load(
                             model_path,
-                            map_location=f'cuda:{self.gpu_id}',
-                            weights_only=True
+                            map_location=f"cuda:{self.gpu_id}",
+                            weights_only=False,
                         )
-                        model.load_state_dict(state_dict)
                     else:
-                        model = SimpleClassifier()
-                        state_dict = torch.load(model_path, map_location='cpu', weights_only=True)
-                        model.load_state_dict(state_dict)
+                        model = torch.load(
+                            model_path, map_location="cpu", weights_only=False
+                        )
                         logger.warning(f"CUDA not available, loaded {model_id} on CPU")
 
                 if model is not None:
