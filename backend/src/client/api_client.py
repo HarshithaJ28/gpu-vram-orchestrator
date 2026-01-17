@@ -22,21 +22,18 @@ class GPUOrchestratorClient:
             base_url: Base URL of the orchestrator API
             api_key: Optional API key for authentication
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.session = requests.Session()
         self._setup_headers()
 
     def _setup_headers(self):
         """Setup default headers"""
-        self.session.headers.update({
-            'Content-Type': 'application/json',
-            'User-Agent': 'GPUOrchestratorClient/1.0'
-        })
+        self.session.headers.update(
+            {"Content-Type": "application/json", "User-Agent": "GPUOrchestratorClient/1.0"}
+        )
         if self.api_key:
-            self.session.headers.update({
-                'Authorization': f'Bearer {self.api_key}'
-            })
+            self.session.headers.update({"Authorization": f"Bearer {self.api_key}"})
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """
@@ -67,11 +64,11 @@ class GPUOrchestratorClient:
 
     def health(self) -> Dict:
         """Check API health"""
-        return self._make_request('GET', '/health')
+        return self._make_request("GET", "/health")
 
     def status(self) -> Dict:
         """Get complete system status"""
-        return self._make_request('GET', '/status')
+        return self._make_request("GET", "/status")
 
     # Predictions
 
@@ -87,12 +84,8 @@ class GPUOrchestratorClient:
         Returns:
             Prediction result with GPU info and timing
         """
-        payload = {
-            'model_id': model_id,
-            'input_data': input_data,
-            **kwargs
-        }
-        return self._make_request('POST', '/predict', json=payload)
+        payload = {"model_id": model_id, "input_data": input_data, **kwargs}
+        return self._make_request("POST", "/predict", json=payload)
 
     def predict_batch(self, model_id: str, samples: List[Dict], **kwargs) -> Dict:
         """
@@ -106,12 +99,8 @@ class GPUOrchestratorClient:
         Returns:
             Batch prediction results
         """
-        payload = {
-            'model_id': model_id,
-            'samples': samples,
-            **kwargs
-        }
-        return self._make_request('POST', '/predict/batch', json=payload)
+        payload = {"model_id": model_id, "samples": samples, **kwargs}
+        return self._make_request("POST", "/predict/batch", json=payload)
 
     # Model Management
 
@@ -128,10 +117,10 @@ class GPUOrchestratorClient:
         """
         params = {}
         if status:
-            params['status'] = status
+            params["status"] = status
         if gpu_id is not None:
-            params['gpu_id'] = gpu_id
-        return self._make_request('GET', '/models', params=params)
+            params["gpu_id"] = gpu_id
+        return self._make_request("GET", "/models", params=params)
 
     def load_model(self, model_id: str, gpu_id: Optional[int] = None, pin: bool = False) -> Dict:
         """
@@ -145,13 +134,10 @@ class GPUOrchestratorClient:
         Returns:
             Load status and task info
         """
-        payload = {
-            'model_id': model_id,
-            'pin': pin
-        }
+        payload = {"model_id": model_id, "pin": pin}
         if gpu_id is not None:
-            payload['gpu_id'] = gpu_id
-        return self._make_request('POST', '/models/load', json=payload)
+            payload["gpu_id"] = gpu_id
+        return self._make_request("POST", "/models/load", json=payload)
 
     def unload_model(self, model_id: str, gpu_id: int) -> Dict:
         """
@@ -164,30 +150,30 @@ class GPUOrchestratorClient:
         Returns:
             Unload status and freed memory
         """
-        payload = {'model_id': model_id, 'gpu_id': gpu_id}
-        return self._make_request('POST', '/models/unload', json=payload)
+        payload = {"model_id": model_id, "gpu_id": gpu_id}
+        return self._make_request("POST", "/models/unload", json=payload)
 
     def pin_model(self, model_id: str, gpu_id: int) -> Dict:
         """Pin a model to prevent LRU eviction"""
-        payload = {'model_id': model_id, 'gpu_id': gpu_id}
-        return self._make_request('POST', '/models/pin', json=payload)
+        payload = {"model_id": model_id, "gpu_id": gpu_id}
+        return self._make_request("POST", "/models/pin", json=payload)
 
     def unpin_model(self, model_id: str, gpu_id: int) -> Dict:
         """Unpin a model"""
-        payload = {'model_id': model_id, 'gpu_id': gpu_id}
-        return self._make_request('POST', '/models/unpin', json=payload)
+        payload = {"model_id": model_id, "gpu_id": gpu_id}
+        return self._make_request("POST", "/models/unpin", json=payload)
 
     # Statistics & Metrics
 
     def stats(self) -> Dict:
         """Get comprehensive system statistics"""
-        return self._make_request('GET', '/stats')
+        return self._make_request("GET", "/stats")
 
     def gpu_stats(self, gpu_id: int) -> Dict:
         """Get statistics for a specific GPU"""
-        return self._make_request('GET', f'/stats/gpu/{gpu_id}')
+        return self._make_request("GET", f"/stats/gpu/{gpu_id}")
 
-    def metrics(self, format: str = 'prometheus') -> str:
+    def metrics(self, format: str = "prometheus") -> str:
         """
         Get metrics
 
@@ -197,16 +183,16 @@ class GPUOrchestratorClient:
         Returns:
             Metrics in specified format
         """
-        endpoint = '/metrics/json' if format == 'json' else '/metrics'
+        endpoint = "/metrics/json" if format == "json" else "/metrics"
         response = self.session.get(f"{self.base_url}{endpoint}")
         response.raise_for_status()
-        return response.text if format == 'prometheus' else response.json()
+        return response.text if format == "prometheus" else response.json()
 
     # Configuration
 
     def config(self) -> Dict:
         """Get current configuration"""
-        return self._make_request('GET', '/config')
+        return self._make_request("GET", "/config")
 
     def update_config(self, config: Dict) -> Dict:
         """
@@ -218,7 +204,7 @@ class GPUOrchestratorClient:
         Returns:
             Updated configuration status
         """
-        return self._make_request('POST', '/config/update', json=config)
+        return self._make_request("POST", "/config/update", json=config)
 
     # Context Manager Support
 
@@ -242,18 +228,18 @@ class GPUOrchestratorAsyncClient:
         """
         import aiohttp
 
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
 
-    async def _get_session(self) -> 'aiohttp.ClientSession':
+    async def _get_session(self) -> "aiohttp.ClientSession":
         """Get or create aiohttp session"""
         import aiohttp
 
         if self.session is None:
-            headers = {'Content-Type': 'application/json'}
+            headers = {"Content-Type": "application/json"}
             if self.api_key:
-                headers['Authorization'] = f'Bearer {self.api_key}'
+                headers["Authorization"] = f"Bearer {self.api_key}"
             self.session = aiohttp.ClientSession(headers=headers)
         return self.session
 
@@ -268,16 +254,12 @@ class GPUOrchestratorAsyncClient:
 
     async def predict(self, model_id: str, input_data: Dict, **kwargs) -> Dict:
         """Run inference (async)"""
-        payload = {
-            'model_id': model_id,
-            'input_data': input_data,
-            **kwargs
-        }
-        return await self._make_request('POST', '/predict', json=payload)
+        payload = {"model_id": model_id, "input_data": input_data, **kwargs}
+        return await self._make_request("POST", "/predict", json=payload)
 
     async def status(self) -> Dict:
         """Get status (async)"""
-        return await self._make_request('GET', '/status')
+        return await self._make_request("GET", "/status")
 
     async def close(self):
         """Close session"""

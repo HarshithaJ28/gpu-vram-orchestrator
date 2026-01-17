@@ -1,11 +1,12 @@
 """GPU Scheduler Module
 
 Intelligent multi-factor scheduler for GPU selection.
-Uses weighted combination of memory availability, current load, and model affinity.
+Uses weighted combination of memory availability, current load,
+and model affinity.
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,11 +15,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SchedulingScore:
     """Score for a GPU scheduling decision"""
+
     gpu_id: int
-    memory_score: float      # 0-1
-    load_score: float        # 0-1
-    affinity_score: float    # 0-1
-    total_score: float       # Weighted sum
+    memory_score: float  # 0-1
+    load_score: float  # 0-1
+    affinity_score: float  # 0-1
+    total_score: float  # Weighted sum
     reasoning: str
 
 
@@ -27,23 +29,20 @@ class GPUScheduler:
     Intelligent multi-factor GPU scheduler
 
     Scheduling factors:
-    1. Available Memory (50% weight) - Essential: Can't load if no room
-    2. Current Load (30% weight) - Avoid bottlenecks: Spread load evenly
-    3. Model Affinity (20% weight) - Keep similar models together for cache/performance
+    1. Available Memory (50% weight) - Essential
+    2. Current Load (30% weight) - Spread load evenly
+    3. Model Affinity (20% weight) - Cache/performance
     """
 
-    WEIGHTS = {
-        'memory': 0.50,
-        'load': 0.30,
-        'affinity': 0.20
-    }
+    WEIGHTS = {"memory": 0.50, "load": 0.30, "affinity": 0.20}
 
     def __init__(self, gpu_caches: List = None):
         """
         Initialize scheduler
 
         Args:
-            gpu_caches: List of GPUModelCache instances (can be empty for testing)
+            gpu_caches: List of GPUModelCache instances
+                (can be empty for testing)
         """
         self.gpu_caches = gpu_caches or []
         self.pending_requests = {}  # gpu_id -> count of pending requests
@@ -53,13 +52,12 @@ class GPUScheduler:
         total = sum(self.WEIGHTS.values())
         if abs(total - 1.0) > 0.01:  # Allow small fp error
             logger.warning(
-                f"Scheduler weights don't sum to 1.0: {total}. "
-                f"Please fix WEIGHTS dict."
+                f"Scheduler weights don't sum to 1.0: {total}. " f"Please fix WEIGHTS dict."
             )
 
         logger.info(
-            f"GPUScheduler initialized with {len(self.gpu_caches)} GPUs "
-            f"Weights: Memory={self.WEIGHTS['memory']}, "
+            f"GPUScheduler initialized with {len(self.gpu_caches)} "
+            f"GPUs Weights: Memory={self.WEIGHTS['memory']}, "
             f"Load={self.WEIGHTS['load']}, "
             f"Affinity={self.WEIGHTS['affinity']}"
         )
@@ -83,7 +81,7 @@ class GPUScheduler:
                 load_score=0.0,
                 affinity_score=0.0,
                 total_score=0.0,
-                reasoning="Invalid GPU ID"
+                reasoning="Invalid GPU ID",
             )
 
         gpu = self.gpu_caches[gpu_id]
@@ -100,9 +98,9 @@ class GPUScheduler:
 
         # Weighted sum
         total_score = (
-            self.WEIGHTS['memory'] * memory_score +
-            self.WEIGHTS['load'] * load_score +
-            self.WEIGHTS['affinity'] * affinity_score
+            self.WEIGHTS["memory"] * memory_score
+            + self.WEIGHTS["load"] * load_score
+            + self.WEIGHTS["affinity"] * affinity_score
         )
 
         return SchedulingScore(
@@ -114,7 +112,7 @@ class GPUScheduler:
             reasoning=(
                 f"Mem:{memory_score:.2f} Load:{load_score:.2f} "
                 f"Aff:{affinity_score:.2f} = {total_score:.2f}"
-            )
+            ),
         )
 
     def _score_memory(self, stats: dict) -> float:
@@ -132,11 +130,11 @@ class GPUScheduler:
         Returns:
             Score 0.0-1.0
         """
-        if stats.get('memory_total_mb', 0) <= 0:
+        if stats.get("memory_total_mb", 0) <= 0:
             logger.warning("Invalid memory stats")
             return 0.0
 
-        free_pct = (stats['memory_free_mb'] / stats['memory_total_mb'])
+        free_pct = stats["memory_free_mb"] / stats["memory_total_mb"]
 
         if free_pct < 0.10:
             return 0.0
@@ -186,11 +184,13 @@ class GPUScheduler:
         same_category_count = 0
         if gpu_id < len(self.gpu_caches):
             for loaded_model in self.gpu_caches[gpu_id].models.values():
-                if self._extract_category(loaded_model.model_id) == target_category:
+                model_cat = self._extract_category(loaded_model.model_id)
+                if model_cat == target_category:
                     same_category_count += 1
 
         # Normalize: max 5 models per category = 1.0 score
-        # This allows multiple versions of same category but doesn't overweight it
+        # This allows multiple versions of same category but doesn't
+        # overweight it
         affinity = min(same_category_count / 5.0, 1.0)
 
         return affinity
@@ -213,24 +213,24 @@ class GPUScheduler:
         if not model_id:
             return ""
 
-        parts = model_id.split('-')
+        parts = model_id.split("-")
 
         # Remove version suffix (starts with 'v' and is all digits)
         if len(parts) > 0:
             last_part = parts[-1]
-            if last_part.startswith('v') and last_part[1:].isdigit():
-                return '-'.join(parts[:-1])
+            if last_part.startswith("v") and last_part[1:].isdigit():
+                return "-".join(parts[:-1])
 
         return model_id
 
     def route_request(self, model_id: str) -> Tuple[int, bool]:
         """
-        CRITICAL METHOD: Route prediction request to optimal GPU
+        CRITICAL METHOD: Route to optimal GPU
 
-        HOT PATH (cache hit): Model already loaded on a GPU → return that GPU immediately
-        COLD PATH (cache miss): Pick optimal GPU using multi-factor scoring
+        HOT PATH (cache hit): Model already loaded
+        COLD PATH (cache miss): Pick optimal GPU
 
-        This method implements the core advantage of ModelMesh:
+        This method implements the core advantage:
         - 1st request: ~100ms (cold, needs load)
         - 2nd+ requests: ~5ms (hot, already loaded)
 
@@ -238,7 +238,7 @@ class GPUScheduler:
             model_id: Model to run prediction on
 
         Returns:
-            (gpu_id, was_cached) - GPU to use and whether model was already loaded
+            (gpu_id, was_cached) - GPU to use and cached status
         """
         # HOT PATH: Check if model already loaded
         for gpu_id, gpu_cache in enumerate(self.gpu_caches):
@@ -260,7 +260,7 @@ class GPUScheduler:
         """Clean up after request completes"""
         self.clear_request(gpu_id)
 
-    def select_best_gpu(self, model_id: str) -> Tuple[int, 'SchedulingScore']:
+    def select_best_gpu(self, model_id: str) -> Tuple[int, "SchedulingScore"]:
         """
         Select the best GPU for this model
 
@@ -284,9 +284,7 @@ class GPUScheduler:
         # Return GPU with highest total score
         best = max(scores, key=lambda s: s.total_score)
 
-        logger.debug(
-            f"Selected GPU {best.gpu_id} for {model_id}: {best.reasoning}"
-        )
+        logger.debug(f"Selected GPU {best.gpu_id} for {model_id}: {best.reasoning}")
 
         return best.gpu_id, best
 
@@ -329,8 +327,8 @@ class GPUScheduler:
             Dictionary with scheduler stats
         """
         return {
-            'num_gpus': len(self.gpu_caches),
-            'pending_requests': dict(self.pending_requests),
-            'model_access_history_size': len(self.model_access_history),
-            'weights': self.WEIGHTS
+            "num_gpus": len(self.gpu_caches),
+            "pending_requests": dict(self.pending_requests),
+            "model_access_history_size": len(self.model_access_history),
+            "weights": self.WEIGHTS,
         }

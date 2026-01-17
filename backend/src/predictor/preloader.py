@@ -6,8 +6,12 @@ Runs periodically to reduce cold-start latency.
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, TYPE_CHECKING
 import logging
+
+if TYPE_CHECKING:
+    from .access_predictor import AccessPatternPredictor
+    from src.scheduler.gpu_scheduler import GPUScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +29,11 @@ class PredictivePreloader:
 
     def __init__(
         self,
-        predictor: 'AccessPatternPredictor',
-        scheduler: 'GPUScheduler',
+        predictor: "AccessPatternPredictor",
+        scheduler: "GPUScheduler",
         gpu_caches: List,
         confidence_threshold: float = 0.4,
-        check_interval_seconds: int = 60
+        check_interval_seconds: int = 60,
     ):
         """
         Initialize preloader
@@ -73,7 +77,11 @@ class PredictivePreloader:
     async def stop(self):
         """Stop the preloader"""
         self.running = False
-        logger.info(f"PredictivePreloader stopped (successes: {self.preload_successes}/{self.preload_attempts})")
+        msg = (
+            f"PredictivePreloader stopped "
+            f"(successes: {self.preload_successes}/{self.preload_attempts})"
+        )
+        logger.info(msg)
 
     async def _preload_cycle(self):
         """
@@ -93,14 +101,14 @@ class PredictivePreloader:
 
         # Get predictions (time-based + sequential)
         time_predictions = self.predictor.predict_next_models(
-            top_k=10,
-            confidence_threshold=self.confidence_threshold
+            top_k=10, confidence_threshold=self.confidence_threshold
         )
         sequential_predictions = self.predictor.get_sequential_prediction(recent_models, top_k=5)
 
         # Combine into unique list
         all_predictions = [m for m, _ in time_predictions] + sequential_predictions
-        all_predictions = list(dict.fromkeys(all_predictions))  # Remove duplicates, preserve order
+        # Remove duplicates, preserve order
+        all_predictions = list(dict.fromkeys(all_predictions))
 
         logger.debug(f"Preload cycle: {len(all_predictions)} predictions")
 
@@ -109,9 +117,7 @@ class PredictivePreloader:
             self.preload_attempts += 1
 
             # Check if already loaded
-            already_loaded = any(
-                model_id in gpu.models for gpu in self.gpu_caches
-            )
+            already_loaded = any(model_id in gpu.models for gpu in self.gpu_caches)
 
             if already_loaded:
                 logger.debug(f"Model {model_id} already loaded, skipping preload")
@@ -129,7 +135,7 @@ class PredictivePreloader:
 
             # Only preload if significant free space (don't displace existing models)
             min_free_mb = 3000  # Need at least 3GB
-            if stats['memory_free_mb'] > min_free_mb:
+            if stats["memory_free_mb"] > min_free_mb:
                 # In real implementation, would load model here
                 # For prototype, just record attempt
                 self.preload_successes += 1
@@ -141,15 +147,14 @@ class PredictivePreloader:
     def get_stats(self) -> dict:
         """Get preloader statistics"""
         success_rate = (
-            self.preload_successes / self.preload_attempts
-            if self.preload_attempts > 0 else 0.0
+            self.preload_successes / self.preload_attempts if self.preload_attempts > 0 else 0.0
         )
 
         return {
-            'running': self.running,
-            'preload_attempts': self.preload_attempts,
-            'preload_successes': self.preload_successes,
-            'success_rate': success_rate,
-            'interval_seconds': self.check_interval_seconds,
-            'confidence_threshold': self.confidence_threshold,
+            "running": self.running,
+            "preload_attempts": self.preload_attempts,
+            "preload_successes": self.preload_successes,
+            "success_rate": success_rate,
+            "interval_seconds": self.check_interval_seconds,
+            "confidence_threshold": self.confidence_threshold,
         }

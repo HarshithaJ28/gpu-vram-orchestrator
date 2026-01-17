@@ -54,8 +54,7 @@ class Config:
         )
         if abs(total_weight - 1.0) > 0.01:  # Allow small floating point error
             logger.warning(
-                f"Scheduler weights don't sum to 1.0: {total_weight}. "
-                f"Normalizing..."
+                f"Scheduler weights don't sum to 1.0: {total_weight}. " f"Normalizing..."
             )
             # Normalize
             self.SCHEDULER_MEMORY_WEIGHT /= total_weight
@@ -70,7 +69,10 @@ class Config:
 Configuration Summary:
   GPU_ENABLED: {self.GPU_ENABLED}
   GPU_RESERVE_MB: {self.GPU_RESERVE_MB}
-  Scheduler Weights: Memory={self.SCHEDULER_MEMORY_WEIGHT}, Load={self.SCHEDULER_LOAD_WEIGHT}, Affinity={self.SCHEDULER_AFFINITY_WEIGHT}
+  Scheduler Weights:
+    Memory={self.SCHEDULER_MEMORY_WEIGHT},
+    Load={self.SCHEDULER_LOAD_WEIGHT},
+    Affinity={self.SCHEDULER_AFFINITY_WEIGHT}
   MAX_PINNED_MODELS: {self.MAX_PINNED_MODELS}
   Server: {self.HOST}:{self.PORT}
   Log Level: {self.LOG_LEVEL}

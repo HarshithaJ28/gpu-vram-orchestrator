@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class InferenceResult:
     """Result from model inference"""
+
     prediction: Any
     latency_ms: float
     gpu_id: int
@@ -48,7 +49,8 @@ class InferenceEngine:
 
         Args:
             model_id: Model identifier
-            preprocessor: Function that takes input_data dict and returns torch.Tensor
+            preprocessor: Function that transforms input_data dict to
+                torch.Tensor
         """
         self.preprocessors[model_id] = preprocessor
         logger.info(f"Registered preprocessor for {model_id}")
@@ -65,11 +67,7 @@ class InferenceEngine:
         logger.info(f"Registered postprocessor for {model_id}")
 
     async def predict(
-        self,
-        model: torch.nn.Module,
-        input_data: Dict[str, Any],
-        model_id: str,
-        gpu_id: int
+        self, model: torch.nn.Module, input_data: Dict[str, Any], model_id: str, gpu_id: int
     ) -> Any:
         """
         Run asynchronous inference on model
@@ -96,7 +94,7 @@ class InferenceEngine:
             # Run synchronously (inference is typically CPU-bound for latency)
             with torch.no_grad():
                 if torch.cuda.is_available():
-                    input_tensor = input_tensor.to(f'cuda:{gpu_id}')
+                    input_tensor = input_tensor.to(f"cuda:{gpu_id}")
 
                 # Forward pass
                 output = model(input_tensor)
@@ -112,11 +110,7 @@ class InferenceEngine:
             raise
 
     def predict_sync(
-        self,
-        model: torch.nn.Module,
-        input_data: Dict[str, Any],
-        model_id: str,
-        gpu_id: int
+        self, model: torch.nn.Module, input_data: Dict[str, Any], model_id: str, gpu_id: int
     ) -> Any:
         """
         Run synchronous inference (blocking)
@@ -137,7 +131,7 @@ class InferenceEngine:
             # Run inference
             with torch.no_grad():
                 if torch.cuda.is_available():
-                    input_tensor = input_tensor.to(f'cuda:{gpu_id}')
+                    input_tensor = input_tensor.to(f"cuda:{gpu_id}")
 
                 output = model(input_tensor)
 
@@ -155,7 +149,7 @@ class InferenceEngine:
         batch_data: List[Dict[str, Any]],
         model_id: str,
         gpu_id: int,
-        batch_size: int = 32
+        batch_size: int = 32,
     ) -> List[Any]:
         """
         Batch inference for multiple inputs (async)
@@ -180,13 +174,10 @@ class InferenceEngine:
         try:
             # Process in chunks
             for i in range(0, len(batch_data), batch_size):
-                chunk = batch_data[i:i + batch_size]
+                chunk = batch_data[i : i + batch_size]
 
                 # Preprocess each item
-                batch_tensors = [
-                    self._preprocess(data, model_id)
-                    for data in chunk
-                ]
+                batch_tensors = [self._preprocess(data, model_id) for data in chunk]
 
                 # Stack into single batch tensor
                 try:
@@ -198,61 +189,44 @@ class InferenceEngine:
                 # Run batch inference in async context
                 loop = asyncio.get_event_loop()
                 batch_output = await loop.run_in_executor(
-                    None,
-                    self._run_batch_inference,
-                    model,
-                    batch_tensor,
-                    gpu_id
+                    None, self._run_batch_inference, model, batch_tensor, gpu_id
                 )
 
                 # Postprocess each output
                 for j in range(len(chunk)):
                     # Extract single output
                     if batch_output.dim() > 1:
-                        output = batch_output[j:j + 1]
+                        output = batch_output[j : j + 1]
                     else:
                         output = batch_output[j]
 
                     prediction = self._postprocess(output, model_id)
                     predictions.append(prediction)
 
-            logger.debug(
-                f"Batch inference for {model_id} "
-                f"completed ({len(batch_data)} items)"
-            )
+            logger.debug(f"Batch inference for {model_id} " f"completed ({len(batch_data)} items)")
             return predictions
 
         except Exception as e:
-            logger.error(
-                f"Batch inference failed for {model_id}: {e}",
-                exc_info=True
-            )
+            logger.error(f"Batch inference failed for {model_id}: {e}", exc_info=True)
             raise
 
     def _run_batch_inference(
-        self,
-        model: torch.nn.Module,
-        batch_tensor: torch.Tensor,
-        gpu_id: int
+        self, model: torch.nn.Module, batch_tensor: torch.Tensor, gpu_id: int
     ) -> torch.Tensor:
         """
         Synchronous batch inference (runs in executor)
-        
+
         Separated to run in thread pool without blocking event loop.
         """
         with torch.no_grad():
             if torch.cuda.is_available():
-                batch_tensor = batch_tensor.to(f'cuda:{gpu_id}')
+                batch_tensor = batch_tensor.to(f"cuda:{gpu_id}")
 
             batch_output = model(batch_tensor)
 
         return batch_output
 
-    def _preprocess(
-        self,
-        input_data: Dict[str, Any],
-        model_id: str
-    ) -> torch.Tensor:
+    def _preprocess(self, input_data: Dict[str, Any], model_id: str) -> torch.Tensor:
         """
         Preprocess input data
 
@@ -285,10 +259,10 @@ class InferenceEngine:
         Returns:
             Preprocessed tensor (batch_size, ...)
         """
-        if 'data' not in input_data:
+        if "data" not in input_data:
             raise ValueError("Input must contain 'data' key")
 
-        data = input_data['data']
+        data = input_data["data"]
 
         # Convert to tensor
         if isinstance(data, (list, np.ndarray)):
@@ -354,7 +328,7 @@ class InferenceEngine:
         try:
             return next(model.parameters()).device
         except StopIteration:
-            return 'cpu'
+            return "cpu"
 
     def estimate_batch_time_ms(self, batch_size: int, gpu_id: int) -> float:
         """Estimate inference time for batch (rough estimate)"""

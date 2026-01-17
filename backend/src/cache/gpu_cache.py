@@ -4,11 +4,10 @@ Thread-safe LRU cache for GPU models with smart eviction and real PyTorch CUDA l
 """
 
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Optional, Dict
 import threading
-import time
-from typing import Any, Optional, Dict, Tuple
 import logging
 import os
 import torch
@@ -19,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LoadedModel:
     """Represents a model loaded in GPU memory"""
+
     model_id: str
     memory_usage_mb: int
     loaded_at: datetime
@@ -51,12 +51,7 @@ class GPUModelCache:
     - Cache statistics (hit rate, evictions, etc.)
     """
 
-    def __init__(
-        self,
-        gpu_id: int,
-        total_memory_mb: int = 24000,
-        reserved_memory_mb: int = 2000
-    ):
+    def __init__(self, gpu_id: int, total_memory_mb: int = 24000, reserved_memory_mb: int = 2000):
         """
         Initialize GPU model cache
 
@@ -113,8 +108,7 @@ class GPUModelCache:
             self.models.move_to_end(model_id)
 
             logger.debug(
-                f"Cache hit for {model_id}: "
-                f"{self.cache_hits} hits, {self.cache_misses} misses"
+                f"Cache hit for {model_id}: " f"{self.cache_hits} hits, {self.cache_misses} misses"
             )
 
             return model
@@ -125,7 +119,7 @@ class GPUModelCache:
         model: Any = None,
         model_path: str = "",
         memory_mb: int = 0,
-        pin: bool = False
+        pin: bool = False,
     ) -> bool:
         """
         Load model onto GPU with REAL PyTorch CUDA loading
@@ -161,7 +155,8 @@ class GPUModelCache:
                     # Auto-estimate
                     if model_path and os.path.exists(model_path):
                         file_size_mb = os.path.getsize(model_path) / (1024 * 1024)
-                        memory_mb = int(file_size_mb * 1.3)  # 1.3x for activations
+                        # 1.3x for activations
+                        memory_mb = int(file_size_mb * 1.3)
                     elif model is not None:
                         memory_mb = self._estimate_model_memory(model)
                     else:
@@ -184,9 +179,10 @@ class GPUModelCache:
                 # Make space by evicting LRU models
                 while self.used_memory_mb + memory_mb > self.available_memory_mb:
                     if not self._evict_lru():
+                        free_memory = self.available_memory_mb - self.used_memory_mb
                         logger.error(
                             f"Cannot free enough space for {model_id} "
-                            f"(need {memory_mb}MB, have {self.available_memory_mb - self.used_memory_mb}MB)"
+                            f"(need {memory_mb}MB, have {free_memory}MB)"
                         )
                         self.failed_loads += 1
                         return False
@@ -201,19 +197,17 @@ class GPUModelCache:
                             weights_only=False,
                         )
                     else:
-                        model = torch.load(
-                            model_path, map_location="cpu", weights_only=False
-                        )
+                        model = torch.load(model_path, map_location="cpu", weights_only=False)
                         logger.warning(f"CUDA not available, loaded {model_id} on CPU")
 
                 if model is not None:
                     # Move to eval mode and freeze
-                    if hasattr(model, 'eval'):
+                    if hasattr(model, "eval"):
                         model.eval()
-                    
+
                     # Move to GPU if available
                     if torch.cuda.is_available():
-                        model = model.to(f'cuda:{self.gpu_id}')
+                        model = model.to(f"cuda:{self.gpu_id}")
                         logger.info(f"Moved {model_id} to cuda:{self.gpu_id}")
 
                 # Add to cache
@@ -225,14 +219,15 @@ class GPUModelCache:
                     access_count=1,
                     is_pinned=pin,
                     model=model,
-                    model_path=model_path
+                    model_path=model_path,
                 )
 
                 self.used_memory_mb += memory_mb
 
+                util_pct = (self.used_memory_mb / self.available_memory_mb) * 100
                 logger.info(
                     f"Loaded {model_id} on GPU {self.gpu_id}: "
-                    f"{memory_mb}MB ({(self.used_memory_mb/self.available_memory_mb)*100:.1f}% util)"
+                    f"{memory_mb}MB ({util_pct:.1f}% util)"
                 )
                 return True
 
@@ -240,24 +235,25 @@ class GPUModelCache:
                 logger.error(f"Failed to load {model_id}: {e}", exc_info=True)
                 self.failed_loads += 1
                 return False
-    
+
     def _estimate_model_memory(self, model: Any) -> int:
         """Estimate PyTorch model memory in MB"""
         try:
             # Count parameters
             param_size = 0
             buffer_size = 0
-            
-            if hasattr(model, 'parameters'):
+
+            if hasattr(model, "parameters"):
                 for param in model.parameters():
                     param_size += param.data.nelement() * param.data.element_size()
-            
-            if hasattr(model, 'buffers'):
+
+            if hasattr(model, "buffers"):
                 for buffer in model.buffers():
                     buffer_size += buffer.data.nelement() * buffer.data.element_size()
-            
+
             total_mb = (param_size + buffer_size) / (1024 * 1024)
-            return max(int(total_mb * 1.3), 100)  # 1.3x for activations, min 100MB
+            # 1.3x for activations, min 100MB
+            return max(int(total_mb * 1.3), 100)
         except Exception as e:
             logger.warning(f"Could not estimate model memory: {e}")
             return 1000  # Default 1GB
@@ -366,28 +362,32 @@ class GPUModelCache:
             hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0.0
 
             return {
-                'gpu_id': self.gpu_id,
-                'models_loaded': len(self.models),
-                'memory_used_mb': self.used_memory_mb,
-                'memory_free_mb': self.available_memory_mb - self.used_memory_mb,
-                'memory_total_mb': self.available_memory_mb,
-                'utilization_pct': (self.used_memory_mb / self.available_memory_mb) * 100 if self.available_memory_mb > 0 else 0,
-                'cache_hits': self.cache_hits,
-                'cache_misses': self.cache_misses,
-                'hit_rate': hit_rate,
-                'evictions': self.evictions,
-                'failed_loads': self.failed_loads,
-                'models': [
+                "gpu_id": self.gpu_id,
+                "models_loaded": len(self.models),
+                "memory_used_mb": self.used_memory_mb,
+                "memory_free_mb": (self.available_memory_mb - self.used_memory_mb),
+                "memory_total_mb": self.available_memory_mb,
+                "utilization_pct": (
+                    (self.used_memory_mb / self.available_memory_mb) * 100
+                    if self.available_memory_mb > 0
+                    else 0
+                ),
+                "cache_hits": self.cache_hits,
+                "cache_misses": self.cache_misses,
+                "hit_rate": hit_rate,
+                "evictions": self.evictions,
+                "failed_loads": self.failed_loads,
+                "models": [
                     {
-                        'model_id': m.model_id,
-                        'memory_mb': m.memory_usage_mb,
-                        'access_count': m.access_count,
-                        'pinned': m.is_pinned,
-                        'age_seconds': m.age_seconds,
-                        'last_access_seconds': m.last_access_age_seconds
+                        "model_id": m.model_id,
+                        "memory_mb": m.memory_usage_mb,
+                        "access_count": m.access_count,
+                        "pinned": m.is_pinned,
+                        "age_seconds": m.age_seconds,
+                        "last_access_seconds": m.last_access_age_seconds,
                     }
                     for m in self.models.values()
-                ]
+                ],
             }
 
     def clear(self):

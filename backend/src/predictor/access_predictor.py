@@ -30,7 +30,8 @@ class AccessPatternPredictor:
         Initialize predictor
 
         Args:
-            history_window_days: How far back to track patterns (default 30 days)
+            history_window_days: How far back to track patterns
+                (default 30 days)
         """
         self.history_window_days = history_window_days
         self.cutoff = datetime.now() - timedelta(days=history_window_days)
@@ -60,7 +61,7 @@ class AccessPatternPredictor:
 
         # Skip old data outside window
         if now < self.cutoff:
-            logger.warning(f"Access outside history window")
+            logger.warning("Access outside history window")
             return
 
         if not model_id:
@@ -94,9 +95,7 @@ class AccessPatternPredictor:
         logger.debug(f"Recorded access: {model_id}")
 
     def predict_next_models(
-        self,
-        top_k: int = 5,
-        confidence_threshold: float = 0.3
+        self, top_k: int = 5, confidence_threshold: float = 0.3
     ) -> List[Tuple[str, float]]:
         """
         Predict top K models likely to be accessed soon
@@ -152,8 +151,7 @@ class AccessPatternPredictor:
 
         # Filter by confidence and sort
         predictions = [
-            (model_id, score) for model_id, score in scores.items()
-            if score >= confidence_threshold
+            (model_id, score) for model_id, score in scores.items() if score >= confidence_threshold
         ]
         predictions.sort(key=lambda x: x[1], reverse=True)
 
@@ -161,11 +159,7 @@ class AccessPatternPredictor:
 
         return predictions[:top_k]
 
-    def get_sequential_prediction(
-        self,
-        recent_models: List[str],
-        top_k: int = 3
-    ) -> List[str]:
+    def get_sequential_prediction(self, recent_models: List[str], top_k: int = 3) -> List[str]:
         """
         Predict next models based on recent access sequence
 
@@ -202,10 +196,10 @@ class AccessPatternPredictor:
             Dictionary with prediction stats
         """
         return {
-            'models_tracked': len(self.access_history),
-            'total_accesses': sum(len(v) for v in self.access_history.values()),
-            'sequential_patterns': sum(len(v) for v in self.sequential_patterns.values()),
-            'window_days': self.history_window_days,
+            "models_tracked": len(self.access_history),
+            "total_accesses": sum(len(v) for v in self.access_history.values()),
+            "sequential_patterns": sum(len(v) for v in self.sequential_patterns.values()),
+            "window_days": self.history_window_days,
         }
 
     def clear(self):

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GPUInfo:
     """Information about a single GPU device"""
+
     gpu_id: int
     name: str
     total_memory_mb: int
@@ -61,12 +62,11 @@ class GPUDetector:
                     name=name,
                     total_memory_mb=int(total_mem),
                     compute_capability=compute_cap,
-                    is_available=True
+                    is_available=True,
                 )
                 gpus.append(gpu_info)
                 logger.info(
-                    f"GPU {i}: {name} - {total_mem:.0f}MB "
-                    f"Compute Capability: {compute_cap}"
+                    f"GPU {i}: {name} - {total_mem:.0f}MB " f"Compute Capability: {compute_cap}"
                 )
 
             except Exception as e:

@@ -3,11 +3,14 @@
 Production-grade GPU VRAM Orchestrator API
 """
 
+from fastapi import Depends
+from prometheus_client import make_asgi_app
 import logging
 import time
 import traceback
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, HTTPException, Depends
+from datetime import datetime
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -24,13 +27,13 @@ from src.monitoring.metrics import MetricsCollector
 from src.security import (
     verify_api_key as security_verify_api_key,
     check_rate_limit,
-    api_key_manager
+    api_key_manager,
+    rate_limiter,
 )
 
 # Configure logging
 logging.basicConfig(
-    level=config.LOG_LEVEL,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=config.LOG_LEVEL, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -71,9 +74,7 @@ async def lifespan(app: FastAPI):
             # Initialize GPU caches (one per GPU)
             _gpu_caches = [
                 GPUModelCache(
-                    gpu_id=i,
-                    total_memory_mb=gpu.total_memory_mb,
-                    reserved_memory_mb=2000
+                    gpu_id=i, total_memory_mb=gpu.total_memory_mb, reserved_memory_mb=2000
                 )
                 for i, gpu in enumerate(gpus)
             ]
@@ -96,10 +97,7 @@ async def lifespan(app: FastAPI):
         logger.info("Metrics collector initialized")
 
         # Initialize ML-based predictor
-        _predictor = ModelAccessPredictor(
-            history_window_hours=24,
-            min_observations=5
-        )
+        _predictor = ModelAccessPredictor(history_window_hours=24, min_observations=5)
         logger.info("Access pattern predictor initialized")
 
         # Initialize and start preloader
@@ -109,7 +107,7 @@ async def lifespan(app: FastAPI):
             registry=_model_registry,
             interval_seconds=60,  # Run every minute
             confidence_threshold=0.5,
-            max_preloads_per_cycle=3
+            max_preloads_per_cycle=3,
         )
         await _preloader.start()
         logger.info("Model preloader started (cycle=60s, confidence=0.5)")
@@ -131,7 +129,7 @@ async def lifespan(app: FastAPI):
         if _preloader:
             await _preloader.stop()
             logger.info("Preloader stopped")
-        
+
         # Clean up GPU memory
         for gpu_cache in _gpu_caches:
             gpu_cache.clear()
@@ -148,14 +146,13 @@ app = FastAPI(
     title="ModelMesh - GPU VRAM Orchestrator",
     description="Production-grade multi-model GPU serving with intelligent caching",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
 # ============================================================================
 # PROMETHEUS METRICS ENDPOINT
 # ============================================================================
-from prometheus_client import make_asgi_app
 try:
     metrics_app = make_asgi_app()
     app.mount("/prometheus", metrics_app)
@@ -167,7 +164,6 @@ except Exception as e:
 # ============================================================================
 # SECURITY MIDDLEWARE - COMPREHENSIVE API KEY & RATE LIMITING
 # ============================================================================
-from fastapi import Depends
 
 # Security managers are imported from src.security module
 # Note: APIKeyManager and RateLimiter are singletons, DO NOT instantiate here
@@ -178,8 +174,10 @@ logger.info("Security module initialized")
 # REQUEST/RESPONSE MODELS
 # ============================================================================
 
+
 class PredictionRequest(BaseModel):
     """Single prediction request"""
+
     model_id: str
     data: Dict[str, Any]
     timeout_ms: Optional[int] = 5000
@@ -187,6 +185,7 @@ class PredictionRequest(BaseModel):
 
 class PredictionResponse(BaseModel):
     """Single prediction response"""
+
     model_id: str
     prediction: Any
     latency_ms: float
@@ -197,6 +196,7 @@ class PredictionResponse(BaseModel):
 
 class BatchPredictionRequest(BaseModel):
     """Batch prediction request"""
+
     model_id: str
     batch_data: List[Dict[str, Any]]
     batch_size: int = 32
@@ -204,6 +204,7 @@ class BatchPredictionRequest(BaseModel):
 
 class BatchPredictionResponse(BaseModel):
     """Batch prediction response"""
+
     model_id: str
     predictions: List[Any]
     latency_ms: float
@@ -214,6 +215,7 @@ class BatchPredictionResponse(BaseModel):
 
 class ModelLoadRequest(BaseModel):
     """Model loading request"""
+
     model_id: str
     model_path: str
     gpu_id: Optional[int] = None
@@ -224,11 +226,12 @@ class ModelLoadRequest(BaseModel):
 # PREDICTION ENDPOINTS
 # ============================================================================
 
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(
     request: PredictionRequest,
     api_key: str = Depends(security_verify_api_key),
-    _: None = Depends(check_rate_limit)
+    _: None = Depends(check_rate_limit),
 ):
     """
     Make prediction using specified model
@@ -242,7 +245,7 @@ async def predict(
     **Response Time:**
     - First request (cold): ~100ms (includes model loading)
     - Subsequent requests (hot): ~5-10ms (cached)
-    
+
     **Headers required:**
     - X-API-Key: Your API key
     """
@@ -268,7 +271,7 @@ async def predict(
 
             if loaded_model is None:
                 # Cold start - load model
-                logger.info(f"[{request.model_id}] Cold start - loading to GPU {gpu_id}")
+                logger.info(f"[{request.model_id}] Cold start - loading " f"to GPU {gpu_id}")
 
                 model_path = _model_registry.get_model_path(request.model_id)
                 if not model_path:
@@ -285,7 +288,7 @@ async def predict(
                 model=loaded_model.model,
                 input_data=request.data,
                 model_id=request.model_id,
-                gpu_id=gpu_id
+                gpu_id=gpu_id,
             )
 
             # ===== STEP 4: Record metrics =====
@@ -307,7 +310,7 @@ async def predict(
                 latency_ms=latency_ms,
                 gpu_id=gpu_id,
                 cached=was_cached,
-                batch_size=1
+                batch_size=1,
             )
 
         finally:
@@ -324,7 +327,7 @@ async def predict(
 async def predict_batch(
     request: BatchPredictionRequest,
     api_key: str = Depends(security_verify_api_key),
-    _: None = Depends(check_rate_limit)
+    _: None = Depends(check_rate_limit),
 ):
     """
     Batch prediction for multiple inputs
@@ -366,7 +369,7 @@ async def predict_batch(
                 batch_data=request.batch_data,
                 model_id=request.model_id,
                 gpu_id=gpu_id,
-                batch_size=request.batch_size
+                batch_size=request.batch_size,
             )
 
             latency_ms = (time.time() - start_time) * 1000
@@ -387,7 +390,7 @@ async def predict_batch(
                 latency_ms=latency_ms,
                 gpu_id=gpu_id,
                 cached=was_cached,
-                batch_size=len(request.batch_data)
+                batch_size=len(request.batch_data),
             )
 
         finally:
@@ -403,6 +406,7 @@ async def predict_batch(
 # ============================================================================
 # MODEL MANAGEMENT ENDPOINTS
 # ============================================================================
+
 
 @app.post("/models/load")
 async def load_model(request: ModelLoadRequest):
@@ -423,19 +427,17 @@ async def load_model(request: ModelLoadRequest):
             gpu_cache = _gpu_caches[gpu_id]
 
         success = gpu_cache.load_model(
-            model_id=request.model_id,
-            model_path=request.model_path,
-            pin=request.pin
+            model_id=request.model_id, model_path=request.model_path, pin=request.pin
         )
 
         if not success:
             raise HTTPException(500, f"Failed to load {request.model_id}")
 
         return {
-            'model_id': request.model_id,
-            'status': 'loaded',
-            'gpu_id': gpu_cache.gpu_id,
-            'pinned': request.pin
+            "model_id": request.model_id,
+            "status": "loaded",
+            "gpu_id": gpu_cache.gpu_id,
+            "pinned": request.pin,
         }
 
     except HTTPException:
@@ -462,9 +464,9 @@ async def evict_model(model_id: str, gpu_id: Optional[int] = None):
 
         success = _gpu_caches[gpu_id].unload_model(model_id)
         return {
-            'model_id': model_id,
-            'evicted_from': [gpu_id] if success else [],
-            'success': success
+            "model_id": model_id,
+            "evicted_from": [gpu_id] if success else [],
+            "success": success,
         }
     else:
         # Evict from all GPUs
@@ -474,9 +476,9 @@ async def evict_model(model_id: str, gpu_id: Optional[int] = None):
                 evicted_from.append(gpu_cache.gpu_id)
 
         return {
-            'model_id': model_id,
-            'evicted_from': evicted_from,
-            'success': len(evicted_from) > 0
+            "model_id": model_id,
+            "evicted_from": evicted_from,
+            "success": len(evicted_from) > 0,
         }
 
 
@@ -490,7 +492,7 @@ async def pin_model(model_id: str, gpu_id: int):
     if not success:
         raise HTTPException(404, f"Model {model_id} not loaded on GPU {gpu_id}")
 
-    return {'model_id': model_id, 'gpu_id': gpu_id, 'pinned': True}
+    return {"model_id": model_id, "gpu_id": gpu_id, "pinned": True}
 
 
 @app.post("/models/{model_id}/unpin")
@@ -503,12 +505,13 @@ async def unpin_model(model_id: str, gpu_id: int):
     if not success:
         raise HTTPException(404, f"Model {model_id} not loaded on GPU {gpu_id}")
 
-    return {'model_id': model_id, 'gpu_id': gpu_id, 'pinned': False}
+    return {"model_id": model_id, "gpu_id": gpu_id, "pinned": False}
 
 
 # ============================================================================
 # STATISTICS & MONITORING ENDPOINTS
 # ============================================================================
+
 
 @app.get("/stats/gpu")
 async def get_gpu_stats():
@@ -544,7 +547,7 @@ async def get_models_stats():
 
     for gpu_cache in _gpu_caches:
         stats = gpu_cache.get_stats()
-        models_by_gpu[f"gpu_{gpu_cache.gpu_id}"] = stats['models']
+        models_by_gpu[f"gpu_{gpu_cache.gpu_id}"] = stats["models"]
 
     return models_by_gpu
 
@@ -562,31 +565,34 @@ async def get_prediction_metrics():
 # HEALTH & INFO ENDPOINTS
 # ============================================================================
 
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint - PUBLIC (no auth required)
-    
+
     Docker containers need this endpoint without authentication to perform
     health checks. Use /health/detailed for authenticated detailed status.
     """
     total_models = sum(len(gpu.models) for gpu in _gpu_caches) if _gpu_caches else 0
     avg_util = (
-        sum(gpu.get_stats()['utilization_pct'] for gpu in _gpu_caches) / len(_gpu_caches)
-        if _gpu_caches else 0
+        sum(gpu.get_stats()["utilization_pct"] for gpu in _gpu_caches) / len(_gpu_caches)
+        if _gpu_caches
+        else 0
     )
 
     cache_hit_rate = (
-        sum(gpu.get_stats()['hit_rate'] for gpu in _gpu_caches) / len(_gpu_caches)
-        if _gpu_caches else 0
+        sum(gpu.get_stats()["hit_rate"] for gpu in _gpu_caches) / len(_gpu_caches)
+        if _gpu_caches
+        else 0
     )
 
     return {
-        'status': 'healthy',
-        'service': 'ModelMesh',
-        'num_gpus': len(_gpu_caches),
-        'total_models_loaded': total_models,
-        'avg_gpu_utilization_pct': avg_util,
-        'cache_hit_rate': cache_hit_rate
+        "status": "healthy",
+        "service": "ModelMesh",
+        "num_gpus": len(_gpu_caches),
+        "total_models_loaded": total_models,
+        "avg_gpu_utilization_pct": avg_util,
+        "cache_hit_rate": cache_hit_rate,
     }
 
 
@@ -598,29 +604,27 @@ async def get_info():
         detected_gpus = _gpu_detector.detect_gpus()
         gpus_info = [
             {
-                'gpu_id': gpu.gpu_id,
-                'name': gpu.name,
-                'compute_capability': gpu.compute_capability,
-                'total_memory_mb': gpu.total_memory_mb
+                "gpu_id": gpu.gpu_id,
+                "name": gpu.name,
+                "compute_capability": gpu.compute_capability,
+                "total_memory_mb": gpu.total_memory_mb,
             }
             for gpu in detected_gpus
         ]
 
     return {
-        'service': 'ModelMesh GPU VRAM Orchestrator',
-        'version': '1.0.0',
-        'status': 'operational',
-        'gpus': gpus_info,
-        'config': {
-            'gpu_enabled': config.GPU_ENABLED,
-            'models_dir': config.MODELS_DIR
-        }
+        "service": "ModelMesh GPU VRAM Orchestrator",
+        "version": "1.0.0",
+        "status": "operational",
+        "gpus": gpus_info,
+        "config": {"gpu_enabled": config.GPU_ENABLED, "models_dir": config.MODELS_DIR},
     }
 
 
 # ============================================================================
 # MODEL REGISTRY ENDPOINTS (WEEK 2)
 # ============================================================================
+
 
 @app.post("/registry/register")
 async def register_model(
@@ -630,7 +634,7 @@ async def register_model(
     framework: str = "pytorch",
     task_type: str = "classification",
     description: str = "",
-    tags: Optional[List[str]] = None
+    tags: Optional[List[str]] = None,
 ):
     """Register a new model in the registry"""
     if not _model_registry:
@@ -644,7 +648,7 @@ async def register_model(
             framework=framework,
             task_type=task_type,
             description=description,
-            tags=tags or []
+            tags=tags or [],
         )
         return asdict(metadata)
     except FileNotFoundError as e:
@@ -657,19 +661,13 @@ async def register_model(
 
 
 @app.get("/registry/models")
-async def list_registered_models(
-    framework: Optional[str] = None,
-    task_type: Optional[str] = None
-):
+async def list_registered_models(framework: Optional[str] = None, task_type: Optional[str] = None):
     """List all registered models with optional filtering"""
     if not _model_registry:
         raise HTTPException(500, "Registry not initialized")
 
     try:
-        models = _model_registry.list_models(
-            framework=framework,
-            task_type=task_type
-        )
+        models = _model_registry.list_models(framework=framework, task_type=task_type)
         return models
     except Exception as e:
         logger.error(f"Failed to list models: {e}")
@@ -686,7 +684,7 @@ async def get_model_metadata(model_id: str):
         metadata = _model_registry.get_model_metadata(model_id)
         if not metadata:
             raise HTTPException(404, f"Model {model_id} not found")
-        
+
         return asdict(metadata)
     except Exception as e:
         logger.error(f"Failed to get model metadata: {e}")
@@ -703,7 +701,7 @@ async def delete_model(model_id: str):
         success = _model_registry.delete_model(model_id)
         if not success:
             raise HTTPException(404, f"Model {model_id} not found")
-        
+
         return {"deleted": model_id, "success": True}
     except Exception as e:
         logger.error(f"Failed to delete model: {e}")
@@ -732,10 +730,7 @@ async def verify_model(model_id: str):
 
     try:
         is_valid = _model_registry.verify_model(model_id)
-        return {
-            'model_id': model_id,
-            'valid': is_valid
-        }
+        return {"model_id": model_id, "valid": is_valid}
     except Exception as e:
         logger.error(f"Verification failed: {e}")
         raise HTTPException(500, str(e))
@@ -759,53 +754,39 @@ async def get_registry_stats():
 # ADMIN ENDPOINTS - API KEY & SECURITY MANAGEMENT
 # ============================================================================
 
+
 @app.post("/admin/keys/generate")
-async def generate_api_key(
-    name: str,
-    admin_key: str = Depends(security_verify_api_key)
-):
+async def generate_api_key(name: str, admin_key: str = Depends(security_verify_api_key)):
     """
     Generate a new API key
-    
+
     Requires valid admin API key
     """
     try:
         key = api_key_manager.generate_key(name)
         logger.info(f"Generated new API key: {name}")
-        
-        return {
-            'key': key,
-            'name': name,
-            'created': datetime.now().isoformat(),
-            'status': 'active'
-        }
+
+        return {"key": key, "name": name, "created": datetime.now().isoformat(), "status": "active"}
     except Exception as e:
         logger.error(f"Failed to generate API key: {e}")
         raise HTTPException(500, str(e))
 
 
 @app.post("/admin/keys/revoke/{key_id}")
-async def revoke_api_key(
-    key_id: str,
-    admin_key: str = Depends(security_verify_api_key)
-):
+async def revoke_api_key(key_id: str, admin_key: str = Depends(security_verify_api_key)):
     """
     Revoke an existing API key
-    
+
     Requires valid admin API key
     """
     try:
         success = api_key_manager.revoke_key(key_id)
         if not success:
             raise HTTPException(404, f"API key {key_id} not found")
-        
+
         logger.info(f"Revoked API key: {key_id}")
-        
-        return {
-            'key_id': key_id,
-            'status': 'revoked',
-            'revoked_at': datetime.now().isoformat()
-        }
+
+        return {"key_id": key_id, "status": "revoked", "revoked_at": datetime.now().isoformat()}
     except HTTPException:
         raise
     except Exception as e:
@@ -817,23 +798,23 @@ async def revoke_api_key(
 async def list_api_keys(admin_key: str = Depends(security_verify_api_key)):
     """
     List all active API keys
-    
+
     Requires valid admin API key
     """
     try:
         keys = api_key_manager.list_keys()
-        
+
         return {
-            'total': len(keys),
-            'keys': [
+            "total": len(keys),
+            "keys": [
                 {
-                    'key_id': key,
-                    'name': api_key_manager.get_key_info(key).get('name', 'unknown'),
-                    'created': api_key_manager.get_key_info(key).get('created', 'unknown'),
-                    'usage_count': api_key_manager.get_key_info(key).get('usage_count', 0)
+                    "key_id": key,
+                    "name": api_key_manager.get_key_info(key).get("name", "unknown"),
+                    "created": api_key_manager.get_key_info(key).get("created", "unknown"),
+                    "usage_count": api_key_manager.get_key_info(key).get("usage_count", 0),
                 }
                 for key in keys
-            ]
+            ],
         }
     except Exception as e:
         logger.error(f"Failed to list API keys: {e}")
@@ -844,28 +825,28 @@ async def list_api_keys(admin_key: str = Depends(security_verify_api_key)):
 async def get_usage_stats(admin_key: str = Depends(security_verify_api_key)):
     """
     Get API usage statistics
-    
+
     Requires valid admin API key
     """
     try:
         usage_stats = {}
-        
+
         for key in api_key_manager.list_keys():
             key_info = api_key_manager.get_key_info(key)
             rate_limit_stats = rate_limiter.get_stats(key)
-            
+
             usage_stats[key] = {
-                'name': key_info.get('name', 'unknown'),
-                'created': key_info.get('created', 'unknown'),
-                'usage_count': key_info.get('usage_count', 0),
-                'rate_limit': {
-                    'remaining_minute': rate_limit_stats.get('remaining_minute', 0),
-                    'remaining_hour': rate_limit_stats.get('remaining_hour', 0),
-                    'reset_minute': rate_limit_stats.get('reset_minute', 'N/A'),
-                    'reset_hour': rate_limit_stats.get('reset_hour', 'N/A')
-                }
+                "name": key_info.get("name", "unknown"),
+                "created": key_info.get("created", "unknown"),
+                "usage_count": key_info.get("usage_count", 0),
+                "rate_limit": {
+                    "remaining_minute": rate_limit_stats.get("remaining_minute", 0),
+                    "remaining_hour": rate_limit_stats.get("remaining_hour", 0),
+                    "reset_minute": rate_limit_stats.get("reset_minute", "N/A"),
+                    "reset_hour": rate_limit_stats.get("reset_hour", "N/A"),
+                },
             }
-        
+
         return usage_stats
     except Exception as e:
         logger.error(f"Failed to get usage stats: {e}")
@@ -876,11 +857,9 @@ async def get_usage_stats(admin_key: str = Depends(security_verify_api_key)):
 # PREDICTOR ENDPOINTS (WEEK 2)
 # ============================================================================
 
+
 @app.get("/predictor/predictions")
-async def get_predictions(
-    top_k: int = 5,
-    api_key: str = Depends(security_verify_api_key)
-):
+async def get_predictions(top_k: int = 5, api_key: str = Depends(security_verify_api_key)):
     """Get current model predictions (most likely to be accessed soon)"""
     if not _predictor:
         raise HTTPException(500, "Predictor not initialized")
@@ -888,8 +867,7 @@ async def get_predictions(
     try:
         predictions = _predictor.predict_next_models(top_k=top_k, min_probability=0.3)
         return [
-            {'model_id': model_id, 'probability': float(prob)}
-            for model_id, prob in predictions
+            {"model_id": model_id, "probability": float(prob)} for model_id, prob in predictions
         ]
     except Exception as e:
         logger.error(f"Failed to get predictions: {e}")
@@ -897,10 +875,7 @@ async def get_predictions(
 
 
 @app.get("/predictor/patterns/{model_id}")
-async def get_model_patterns(
-    model_id: str,
-    api_key: str = Depends(security_verify_api_key)
-):
+async def get_model_patterns(model_id: str, api_key: str = Depends(security_verify_api_key)):
     """Get learned access patterns for a specific model"""
     if not _predictor:
         raise HTTPException(500, "Predictor not initialized")
@@ -931,6 +906,7 @@ async def get_predictor_stats(api_key: str = Depends(security_verify_api_key)):
 # PRELOADER ENDPOINTS (WEEK 2)
 # ============================================================================
 
+
 @app.get("/preloader/stats")
 async def get_preloader_stats(api_key: str = Depends(security_verify_api_key)):
     """Get preloader statistics"""
@@ -953,10 +929,10 @@ async def start_preloader(admin_key: str = Depends(security_verify_api_key)):
 
     try:
         if _preloader.running:
-            return {'status': 'already_running'}
-        
+            return {"status": "already_running"}
+
         await _preloader.start()
-        return {'status': 'started'}
+        return {"status": "started"}
     except Exception as e:
         logger.error(f"Failed to start preloader: {e}")
         raise HTTPException(500, str(e))
@@ -970,10 +946,10 @@ async def stop_preloader(admin_key: str = Depends(security_verify_api_key)):
 
     try:
         if not _preloader.running:
-            return {'status': 'already_stopped'}
-        
+            return {"status": "already_stopped"}
+
         await _preloader.stop()
-        return {'status': 'stopped'}
+        return {"status": "stopped"}
     except Exception as e:
         logger.error(f"Failed to stop preloader: {e}")
         raise HTTPException(500, str(e))
@@ -987,7 +963,7 @@ async def reset_preloader_stats(admin_key: str = Depends(security_verify_api_key
 
     try:
         _preloader.reset_stats()
-        return {'status': 'reset'}
+        return {"status": "reset"}
     except Exception as e:
         logger.error(f"Failed to reset stats: {e}")
         raise HTTPException(500, str(e))
@@ -997,50 +973,50 @@ async def reset_preloader_stats(admin_key: str = Depends(security_verify_api_key
 async def root():
     """Root endpoint with service information"""
     return {
-        'service': 'ModelMesh',
-        'version': '1.0.0',
-        'description': 'Multi-model GPU serving with intelligent caching',
-        'docs': '/docs',
-        'features': {
-            'core': [
-                'Multi-GPU memory management',
-                'LRU cache with automatic eviction',
-                'Multi-factor intelligent routing',
-                'Statistical access pattern prediction',
-                'Predictive model preloading',
-                'Thread-safe concurrent operations'
+        "service": "ModelMesh",
+        "version": "1.0.0",
+        "description": "Multi-model GPU serving with intelligent caching",
+        "docs": "/docs",
+        "features": {
+            "core": [
+                "Multi-GPU memory management",
+                "LRU cache with automatic eviction",
+                "Multi-factor intelligent routing",
+                "Statistical access pattern prediction",
+                "Predictive model preloading",
+                "Thread-safe concurrent operations",
             ],
-            'api': [
-                'RESTful prediction endpoint',
-                'Batch inference support',
-                'Model registry management',
-                'Real-time metrics and stats'
+            "api": [
+                "RESTful prediction endpoint",
+                "Batch inference support",
+                "Model registry management",
+                "Real-time metrics and stats",
             ],
-            'security': [
-                'API key authentication',
-                'Rate limiting (100/min, 1000/hour)',
-                'Request timeout handling'
+            "security": [
+                "API key authentication",
+                "Rate limiting (100/min, 1000/hour)",
+                "Request timeout handling",
             ],
-            'monitoring': [
-                'Prometheus metrics integration',
-                'Grafana dashboards',
-                'GPU utilization tracking',
-                'Cache performance analytics'
+            "monitoring": [
+                "Prometheus metrics integration",
+                "Grafana dashboards",
+                "GPU utilization tracking",
+                "Cache performance analytics",
             ],
-            'deployment': [
-                'Docker containerization',
-                'Kubernetes support',
-                'Multi-GPU orchestration'
-            ]
+            "deployment": [
+                "Docker containerization",
+                "Kubernetes support",
+                "Multi-GPU orchestration",
+            ],
         },
-        'endpoints': {
-            'documentation': '/docs',
-            'health': '/health',
-            'metrics': '/metrics',
-            'predict': '/predict',
-            'registry': '/registry/models'
+        "endpoints": {
+            "documentation": "/docs",
+            "health": "/health",
+            "metrics": "/metrics",
+            "predict": "/predict",
+            "registry": "/registry/models",
         },
-        'repository': 'https://github.com/HarshithaJ28/gpu-vram-orchestrator'
+        "repository": "https://github.com/HarshithaJ28/gpu-vram-orchestrator",
     }
 
 
@@ -1048,22 +1024,15 @@ async def root():
 # ERROR HANDLERS
 # ============================================================================
 
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
     """Handle all unhandled exceptions"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal server error"}
-    )
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        app,
-        host=config.HOST,
-        port=config.PORT,
-        log_level=config.LOG_LEVEL.lower()
-    )
 
+    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level=config.LOG_LEVEL.lower())

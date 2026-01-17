@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MemoryAllocation:
     """Represents a memory allocation on GPU"""
+
     model_id: str
     gpu_id: int
     size_mb: int
@@ -31,12 +32,7 @@ class MemoryAllocation:
 class MemoryManager:
     """Manage GPU memory allocation and deallocation"""
 
-    def __init__(
-        self,
-        gpu_id: int,
-        total_memory_mb: int,
-        reserve_mb: int = 2000
-    ):
+    def __init__(self, gpu_id: int, total_memory_mb: int, reserve_mb: int = 2000):
         """
         Initialize memory manager
 
@@ -52,9 +48,7 @@ class MemoryManager:
         if total_memory_mb <= 0:
             raise ValueError(f"Invalid total_memory_mb: {total_memory_mb}")
         if reserve_mb >= total_memory_mb:
-            raise ValueError(
-                f"Reserve ({reserve_mb}MB) >= total ({total_memory_mb}MB)"
-            )
+            raise ValueError(f"Reserve ({reserve_mb}MB) >= total ({total_memory_mb}MB)")
 
         self.gpu_id = gpu_id
         self.total_memory_mb = total_memory_mb
@@ -118,23 +112,18 @@ class MemoryManager:
 
         if not self.can_allocate(size_mb):
             logger.warning(
-                f"Cannot allocate {size_mb}MB for {model_id} "
-                f"(used: {self.used_memory_mb}MB)"
+                f"Cannot allocate {size_mb}MB for {model_id} " f"(used: {self.used_memory_mb}MB)"
             )
             return False
 
         # Allocate
         self.allocations[model_id] = MemoryAllocation(
-            model_id=model_id,
-            gpu_id=self.gpu_id,
-            size_mb=size_mb,
-            allocated_at=time.time()
+            model_id=model_id, gpu_id=self.gpu_id, size_mb=size_mb, allocated_at=time.time()
         )
         self.used_memory_mb += size_mb
 
         logger.debug(
-            f"Allocated {size_mb}MB for {model_id} "
-            f"(total used: {self.used_memory_mb}MB)"
+            f"Allocated {size_mb}MB for {model_id} " f"(total used: {self.used_memory_mb}MB)"
         )
         return True
 
@@ -192,9 +181,12 @@ class MemoryManager:
 
     def get_fragmentation_ratio(self) -> float:
         """
-        Calculate memory fragmentation (0.0 = perfect, 1.0 = heavily fragmented)
+        Calculate memory fragmentation ratio
 
-        Simple heuristic: (number of allocations) / (total available memory / 1000)
+        0.0 = perfect, 1.0 = heavily fragmented
+
+        Simple heuristic: (number of allocations) /
+        (total available memory / 1000)
         This estimates internal fragmentation.
 
         Returns:
@@ -205,7 +197,8 @@ class MemoryManager:
 
         # More allocations → more fragmented
         num_allocations = len(self.allocations)
-        fragmentation = min(num_allocations / (self.available_memory_mb / 1000), 1.0)
+        norm_factor = self.available_memory_mb / 1000
+        fragmentation = min(num_allocations / norm_factor, 1.0)
         return fragmentation
 
     def get_largest_free_block_mb(self) -> int:
@@ -234,14 +227,14 @@ class MemoryManager:
             Dictionary with memory stats
         """
         return {
-            'gpu_id': self.gpu_id,
-            'total_memory_mb': self.total_memory_mb,
-            'reserved_memory_mb': self.reserved_memory_mb,
-            'available_memory_mb': self.available_memory_mb,
-            'used_memory_mb': self.used_memory_mb,
-            'free_memory_mb': self.get_free_memory_mb(),
-            'usage_percent': self.get_usage_percent(),
-            'num_allocations': len(self.allocations),
-            'fragmentation_ratio': self.get_fragmentation_ratio(),
-            'largest_free_block_mb': self.get_largest_free_block_mb(),
+            "gpu_id": self.gpu_id,
+            "total_memory_mb": self.total_memory_mb,
+            "reserved_memory_mb": self.reserved_memory_mb,
+            "available_memory_mb": self.available_memory_mb,
+            "used_memory_mb": self.used_memory_mb,
+            "free_memory_mb": self.get_free_memory_mb(),
+            "usage_percent": self.get_usage_percent(),
+            "num_allocations": len(self.allocations),
+            "fragmentation_ratio": self.get_fragmentation_ratio(),
+            "largest_free_block_mb": self.get_largest_free_block_mb(),
         }

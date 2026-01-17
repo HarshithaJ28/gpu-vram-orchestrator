@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Try to import prometheus_client, but make it optional
 try:
     from prometheus_client import Counter, Gauge, Histogram, generate_latest
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
@@ -40,7 +41,8 @@ class MetricsCollector:
         Initialize metrics collector
 
         Args:
-            use_prometheus: Whether to use Prometheus (can be disabled for testing)
+            use_prometheus: Whether to use Prometheus (can be disabled
+                for testing)
         """
         self.lock = RLock()
         self.use_prometheus = use_prometheus and PROMETHEUS_AVAILABLE
@@ -63,7 +65,8 @@ class MetricsCollector:
         if self.use_prometheus:
             self._init_prometheus_metrics()
 
-        logger.info(f"MetricsCollector initialized (prometheus: {self.use_prometheus})")
+        msg = f"MetricsCollector initialized " f"(prometheus: {self.use_prometheus})"
+        logger.info(msg)
 
     def _init_prometheus_metrics(self):
         """Initialize Prometheus metrics"""
@@ -71,80 +74,68 @@ class MetricsCollector:
         try:
             # Cache metrics
             self.prom_cache_hits = Counter(
-                f'gpu_cache_hits_total_{self.instance_id}',
-                'Total cache hits'
+                f"gpu_cache_hits_total_{self.instance_id}", "Total cache hits"
             )
             self.prom_cache_misses = Counter(
-                f'gpu_cache_misses_total_{self.instance_id}',
-                'Total cache misses'
+                f"gpu_cache_misses_total_{self.instance_id}", "Total cache misses"
             )
             self.prom_evictions = Counter(
-                f'cache_evictions_total_{self.instance_id}',
-                'Total cache evictions'
+                f"cache_evictions_total_{self.instance_id}", "Total cache evictions"
             )
 
             # GPU metrics
             self.prom_gpu_utilization = Gauge(
-                f'gpu_utilization_percent_{self.instance_id}',
-                'GPU utilization (%)',
-                ['gpu_id']
+                f"gpu_utilization_percent_{self.instance_id}", "GPU utilization (%)", ["gpu_id"]
             )
             self.prom_models_loaded = Gauge(
-                f'gpu_models_loaded_{self.instance_id}',
-                'Number of models loaded on GPU',
-                ['gpu_id']
+                f"gpu_models_loaded_{self.instance_id}",
+                "Number of models loaded on GPU",
+                ["gpu_id"],
             )
 
             # Scheduler metrics
             self.prom_scheduler_time = Histogram(
-                f'scheduler_selection_time_ms_{self.instance_id}',
-                'Time to select best GPU (ms)',
-                buckets=[0.1, 0.5, 1, 5, 10, 50]
+                f"scheduler_selection_time_ms_{self.instance_id}",
+                "Time to select best GPU (ms)",
+                buckets=[0.1, 0.5, 1, 5, 10, 50],
             )
 
             # Latency metrics
             self.prom_inference_latency = Histogram(
-                f'inference_latency_ms_{self.instance_id}',
-                'Inference latency (ms)',
-                ['model_id'],
-                buckets=[10, 50, 100, 250, 500, 1000, 2000, 5000]
+                f"inference_latency_ms_{self.instance_id}",
+                "Inference latency (ms)",
+                ["model_id"],
+                buckets=[10, 50, 100, 250, 500, 1000, 2000, 5000],
             )
             self.prom_model_load_time = Histogram(
-                f'model_load_time_ms_{self.instance_id}',
-                'Model load time (ms)',
-                ['model_id'],
-                buckets=[100, 500, 1000, 2000, 5000, 10000]
+                f"model_load_time_ms_{self.instance_id}",
+                "Model load time (ms)",
+                ["model_id"],
+                buckets=[100, 500, 1000, 2000, 5000, 10000],
             )
 
             # Cost
-            self.prom_gpu_hours = Counter(
-                f'gpu_hours_total_{self.instance_id}',
-                'Total GPU hours'
-            )
+            self.prom_gpu_hours = Counter(f"gpu_hours_total_{self.instance_id}", "Total GPU hours")
             self.prom_cost_savings = Gauge(
-                f'cost_savings_dollars_{self.instance_id}',
-                'Cost savings'
+                f"cost_savings_dollars_{self.instance_id}", "Cost savings"
             )
 
             # GPU Hardware Monitoring
             self.prom_gpu_temp = Gauge(
-                f'gpu_temperature_celsius_{self.instance_id}',
-                'GPU temperature in Celsius',
-                ['gpu_id']
+                f"gpu_temperature_celsius_{self.instance_id}",
+                "GPU temperature in Celsius",
+                ["gpu_id"],
             )
             self.prom_gpu_power = Gauge(
-                f'gpu_power_watts_{self.instance_id}',
-                'GPU power consumption in watts',
-                ['gpu_id']
+                f"gpu_power_watts_{self.instance_id}", "GPU power consumption in watts", ["gpu_id"]
             )
             self.prom_gpu_memory_mb = Gauge(
-                f'gpu_memory_used_mb_{self.instance_id}',
-                'GPU memory used in MB',
-                ['gpu_id']
+                f"gpu_memory_used_mb_{self.instance_id}", "GPU memory used in MB", ["gpu_id"]
             )
         except ValueError as e:
             # Metric already registered, fallback to memory mode
-            logger.warning(f"Prometheus metric conflict: {e}, using memory metrics only")
+            msg = f"Prometheus metric conflict: {e}, using memory metrics only"
+            logger.warning(msg)
             self.use_prometheus = False
 
     def record_cache_hit(self, gpu_id: int):
@@ -173,7 +164,8 @@ class MetricsCollector:
             self.gpu_utilization_pct[gpu_id] = percent
             if self.use_prometheus:
                 try:
-                    self.prom_gpu_utilization.labels(gpu_id=gpu_id).set(percent)
+                    prom_util = self.prom_gpu_utilization
+                    prom_util.labels(gpu_id=gpu_id).set(percent)
                 except Exception as e:
                     logger.warning(f"Failed to record Prometheus metric: {e}")
 
@@ -203,7 +195,8 @@ class MetricsCollector:
             self.inference_latencies[model_id] = latency_ms
             if self.use_prometheus:
                 try:
-                    self.prom_inference_latency.labels(model_id=model_id).observe(latency_ms)
+                    prom_lat = self.prom_inference_latency
+                    prom_lat.labels(model_id=model_id).observe(latency_ms)
                 except Exception as e:
                     logger.warning(f"Failed to record Prometheus metric: {e}")
 
@@ -213,7 +206,8 @@ class MetricsCollector:
             self.model_load_times[model_id] = time_ms
             if self.use_prometheus:
                 try:
-                    self.prom_model_load_time.labels(model_id=model_id).observe(time_ms)
+                    prom_load = self.prom_model_load_time
+                    prom_load.labels(model_id=model_id).observe(time_ms)
                 except Exception as e:
                     logger.warning(f"Failed to record Prometheus metric: {e}")
 
@@ -263,7 +257,8 @@ class MetricsCollector:
             self.gpu_memory[gpu_id] = memory_mb
             if self.use_prometheus:
                 try:
-                    self.prom_gpu_memory_mb.labels(gpu_id=gpu_id).set(memory_mb)
+                    prom_mem = self.prom_gpu_memory_mb
+                    prom_mem.labels(gpu_id=gpu_id).set(memory_mb)
                 except Exception as e:
                     logger.warning(f"Failed to record GPU memory: {e}")
 
@@ -301,33 +296,34 @@ class MetricsCollector:
         with self.lock:
             if self.use_prometheus:
                 try:
-                    return generate_latest().decode('utf-8')
+                    return generate_latest().decode("utf-8")
                 except Exception:
                     pass
-            
+
             # Fallback: return simple text summary
             lines = ["# GPU VRAM Orchestrator Metrics (In-Memory)\n"]
             lines.append(f"cache_hits_total {self.cache_hits}\n")
             lines.append(f"cache_misses_total {self.cache_misses}\n")
             for gpu_id, util in self.gpu_utilization_pct.items():
-                lines.append(f"gpu_utilization_percent{{gpu_id=\"{gpu_id}\"}} {util}\n")
+                line = f'gpu_utilization_percent{{gpu_id="{gpu_id}"}} {util}\n'
+                lines.append(line)
             return "".join(lines)
 
     def export_metrics_dict(self) -> Dict:
         """Get metrics as dictionary"""
         with self.lock:
             return {
-                'cache_hits': self.cache_hits,
-                'cache_misses': self.cache_misses,
-                'cache_hit_rate': self.get_cache_hit_rate(),
-                'gpu_utilization': self.gpu_utilization_pct.copy(),
-                'models_loaded': self.models_loaded_per_gpu.copy(),
-                'scheduler_times': self.scheduler_times.copy(),
-                'inference_latencies': self.inference_latencies.copy(),
-                'model_load_times': self.model_load_times.copy(),
-                'cost_gpu_hours': self.cost_gpu_hours,
-                'cost_savings': self.cost_savings,
-                'gpu_temperature': self.gpu_temperature.copy(),
-                'gpu_power': self.gpu_power.copy(),
-                'gpu_memory': self.gpu_memory.copy(),
+                "cache_hits": self.cache_hits,
+                "cache_misses": self.cache_misses,
+                "cache_hit_rate": self.get_cache_hit_rate(),
+                "gpu_utilization": self.gpu_utilization_pct.copy(),
+                "models_loaded": self.models_loaded_per_gpu.copy(),
+                "scheduler_times": self.scheduler_times.copy(),
+                "inference_latencies": self.inference_latencies.copy(),
+                "model_load_times": self.model_load_times.copy(),
+                "cost_gpu_hours": self.cost_gpu_hours,
+                "cost_savings": self.cost_savings,
+                "gpu_temperature": self.gpu_temperature.copy(),
+                "gpu_power": self.gpu_power.copy(),
+                "gpu_memory": self.gpu_memory.copy(),
             }
